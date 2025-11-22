@@ -1,0 +1,279 @@
+openapi: 3.0.3
+info:
+  title: Frego Finance API
+  description: Finance module API for Frego ERP - handles AR, AP, and GL operations
+  version: 1.0.0
+  contact:
+    name: Frego Support
+    email: support@frego.com
+
+servers:
+  - url: http://localhost:8080/finance/api/v1
+    description: Local development
+  - url: https://api.myfrego.com/finance/api/v1
+    description: Production
+
+security:
+  - BearerAuth: []
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    TenantID:
+      name: X-Tenant-ID
+      in: header
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: Tenant identifier
+
+  schemas:
+    Error:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        details:
+          type: object
+
+    Invoice:
+      type: object
+      required:
+        - invoice_no
+        - invoice_date
+        - customer_id
+        - currency_code
+      properties:
+        id:
+          type: string
+          format: uuid
+        invoice_no:
+          type: string
+        invoice_type:
+          type: string
+        invoice_date:
+          type: string
+          format: date
+        customer_id:
+          type: string
+          format: uuid
+        job_id:
+          type: string
+          format: uuid
+        currency_code:
+          type: string
+          minLength: 3
+          maxLength: 3
+        grand_total_amount:
+          type: number
+          format: double
+        approval_status:
+          type: string
+          enum: [Draft, Pending Approval, Approved, Returned, Posted]
+        created_at:
+          type: string
+          format: date-time
+
+    Receipt:
+      type: object
+      required:
+        - receipt_no
+        - receipt_date
+        - customer_id
+        - currency_code
+      properties:
+        id:
+          type: string
+          format: uuid
+        receipt_no:
+          type: string
+        receipt_date:
+          type: string
+          format: date
+        customer_id:
+          type: string
+          format: uuid
+        currency_code:
+          type: string
+        received_amount_customer:
+          type: number
+          format: double
+        approval_status:
+          type: string
+
+paths:
+  /health:
+    get:
+      summary: Health check
+      operationId: healthCheck
+      security: []
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            text/plain:
+              schema:
+                type: string
+
+  /invoices:
+    get:
+      summary: List invoices
+      operationId: listInvoices
+      parameters:
+        - $ref: '#/components/parameters/TenantID'
+        - name: customer_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: List of invoices
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  invoices:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Invoice'
+                  total:
+                    type: integer
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+
+    post:
+      summary: Create invoice
+      operationId: createInvoice
+      parameters:
+        - $ref: '#/components/parameters/TenantID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Invoice'
+      responses:
+        '201':
+          description: Invoice created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Invoice'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /invoices/{invoice_id}:
+    get:
+      summary: Get invoice
+      operationId: getInvoice
+      parameters:
+        - $ref: '#/components/parameters/TenantID'
+        - name: invoice_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Invoice details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Invoice'
+        '404':
+          description: Invoice not found
+
+  /receipts:
+    get:
+      summary: List receipts
+      operationId: listReceipts
+      parameters:
+        - $ref: '#/components/parameters/TenantID'
+      responses:
+        '200':
+          description: List of receipts
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  receipts:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Receipt'
+
+    post:
+      summary: Create receipt
+      operationId: createReceipt
+      parameters:
+        - $ref: '#/components/parameters/TenantID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Receipt'
+      responses:
+        '201':
+          description: Receipt created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Receipt'
+
+  /tenants/{tenant_id}/provision:
+    post:
+      summary: Provision finance schema for a tenant
+      operationId: provisionTenant
+      description: Creates finance schema for the tenant. Schema name is auto-generated as 'finance_{tenant_id}'.
+      parameters:
+        - name: tenant_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Tenant identifier
+      responses:
+        '200':
+          description: Tenant provisioned successfully
+        '400':
+          description: Bad request
+        '404':
+          description: Tenant not found
+        '500':
+          description: Internal server error

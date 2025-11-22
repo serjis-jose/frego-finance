@@ -2,44 +2,30 @@
 set -euo pipefail
 
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-GO_BIN=${GO_BIN:-go}
+GO_BIN=${GO:-go}
+MAKE_BIN=${MAKE:-make}
+OUTPUT_DIR=${OUTPUT_DIR:-"$ROOT_DIR/bin"}
+BINARY_NAME=${BINARY_NAME:-finance-server}
+SKIP_GENERATE=${SKIP_GENERATE:-0}
+GOCACHE_DIR=${GOCACHE:-"$ROOT_DIR/.cache/go-build"}
 
-echo "==> Compiling Finance microservice"
+GOPATH_BIN=$("$GO_BIN" env GOPATH)/bin
+export PATH="$GOPATH_BIN:$PATH"
 
-cd "$ROOT_DIR"
+mkdir -p "$OUTPUT_DIR" "$GOCACHE_DIR"
+export GOCACHE="$GOCACHE_DIR"
 
-# Clean previous builds
-echo "    Cleaning previous builds..."
-rm -rf bin/
-mkdir -p bin/
-
-# Build for current platform
-echo "    Building for current platform..."
-CGO_ENABLED=0 ${GO_BIN} build -o bin/finance-server ./cmd/server
-
-echo "    Build complete: bin/finance-server"
-
-# Optionally build for multiple platforms
-if [ "${BUILD_ALL_PLATFORMS:-false}" = "true" ]; then
-	echo "    Building for multiple platforms..."
-	
-	# Linux AMD64
-	echo "    - linux/amd64"
-	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 ${GO_BIN} build -o bin/finance-server-linux-amd64 ./cmd/server
-	
-	# Linux ARM64
-	echo "    - linux/arm64"
-	GOOS=linux GOARCH=arm64 CGO_ENABLED=0 ${GO_BIN} build -o bin/finance-server-linux-arm64 ./cmd/server
-	
-	# macOS AMD64
-	echo "    - darwin/amd64"
-	GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 ${GO_BIN} build -o bin/finance-server-darwin-amd64 ./cmd/server
-	
-	# macOS ARM64
-	echo "    - darwin/arm64"
-	GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 ${GO_BIN} build -o bin/finance-server-darwin-arm64 ./cmd/server
-	
-	echo "    All platform builds complete"
+if [[ "$SKIP_GENERATE" != "1" ]]; then
+	echo "==> running code generation"
+	(cd "$ROOT_DIR" && "$MAKE_BIN" generate)
 fi
 
-echo "==> Done!"
+if [[ ! -f "$ROOT_DIR/go.sum" ]]; then
+	echo "==> generating go.sum"
+	(cd "$ROOT_DIR" && "$GO_BIN" mod tidy)
+fi
+
+echo "==> building $BINARY_NAME"
+(cd "$ROOT_DIR" && "$GO_BIN" build -o "$OUTPUT_DIR/$BINARY_NAME" ./cmd/server)
+
+echo "==> build complete: $OUTPUT_DIR/$BINARY_NAME"

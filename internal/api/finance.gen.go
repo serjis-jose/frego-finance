@@ -102,25 +102,11 @@ type CreateReceiptParams struct {
 	XTenantID TenantID `json:"X-Tenant-ID"`
 }
 
-// ProvisionTenantJSONBody defines parameters for ProvisionTenant.
-type ProvisionTenantJSONBody struct {
-	SchemaName *string `json:"schema_name,omitempty"`
-}
-
-// ProvisionTenantParams defines parameters for ProvisionTenant.
-type ProvisionTenantParams struct {
-	// XTenantID Tenant identifier
-	XTenantID TenantID `json:"X-Tenant-ID"`
-}
-
 // CreateInvoiceJSONRequestBody defines body for CreateInvoice for application/json ContentType.
 type CreateInvoiceJSONRequestBody = Invoice
 
 // CreateReceiptJSONRequestBody defines body for CreateReceipt for application/json ContentType.
 type CreateReceiptJSONRequestBody = Receipt
-
-// ProvisionTenantJSONRequestBody defines body for ProvisionTenant for application/json ContentType.
-type ProvisionTenantJSONRequestBody ProvisionTenantJSONBody
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
@@ -143,8 +129,8 @@ type ServerInterface interface {
 	// (POST /receipts)
 	CreateReceipt(w http.ResponseWriter, r *http.Request, params CreateReceiptParams)
 	// Provision finance schema for a tenant
-	// (POST /tenants/provision)
-	ProvisionTenant(w http.ResponseWriter, r *http.Request, params ProvisionTenantParams)
+	// (POST /tenants/{tenant_id}/provision)
+	ProvisionTenant(w http.ResponseWriter, r *http.Request, tenantId openapi_types.UUID)
 }
 
 // Unimplemented server implementation that returns http.StatusNotImplemented for each endpoint.
@@ -188,8 +174,8 @@ func (_ Unimplemented) CreateReceipt(w http.ResponseWriter, r *http.Request, par
 }
 
 // Provision finance schema for a tenant
-// (POST /tenants/provision)
-func (_ Unimplemented) ProvisionTenant(w http.ResponseWriter, r *http.Request, params ProvisionTenantParams) {
+// (POST /tenants/{tenant_id}/provision)
+func (_ Unimplemented) ProvisionTenant(w http.ResponseWriter, r *http.Request, tenantId openapi_types.UUID) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -499,38 +485,19 @@ func (siw *ServerInterfaceWrapper) ProvisionTenant(w http.ResponseWriter, r *htt
 
 	var err error
 
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+	// ------------- Path parameter "tenant_id" -------------
+	var tenantId openapi_types.UUID
 
-	// Parameter object where we will unmarshal all parameters from the context
-	var params ProvisionTenantParams
-
-	headers := r.Header
-
-	// ------------- Required header parameter "X-Tenant-ID" -------------
-	if valueList, found := headers[http.CanonicalHeaderKey("X-Tenant-ID")]; found {
-		var XTenantID TenantID
-		n := len(valueList)
-		if n != 1 {
-			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-Tenant-ID", Count: n})
-			return
-		}
-
-		err = runtime.BindStyledParameterWithLocation("simple", false, "X-Tenant-ID", runtime.ParamLocationHeader, valueList[0], &XTenantID)
-		if err != nil {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-Tenant-ID", Err: err})
-			return
-		}
-
-		params.XTenantID = XTenantID
-
-	} else {
-		err := fmt.Errorf("Header parameter X-Tenant-ID is required, but not found")
-		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-Tenant-ID", Err: err})
+	err = runtime.BindStyledParameterWithLocation("simple", false, "tenant_id", runtime.ParamLocationPath, chi.URLParam(r, "tenant_id"), &tenantId)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "tenant_id", Err: err})
 		return
 	}
 
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.ProvisionTenant(w, r, params)
+		siw.Handler.ProvisionTenant(w, r, tenantId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -672,7 +639,7 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Post(options.BaseURL+"/receipts", wrapper.CreateReceipt)
 	})
 	r.Group(func(r chi.Router) {
-		r.Post(options.BaseURL+"/tenants/provision", wrapper.ProvisionTenant)
+		r.Post(options.BaseURL+"/tenants/{tenant_id}/provision", wrapper.ProvisionTenant)
 	})
 
 	return r
@@ -822,8 +789,7 @@ func (response CreateReceipt201JSONResponse) VisitCreateReceiptResponse(w http.R
 }
 
 type ProvisionTenantRequestObject struct {
-	Params ProvisionTenantParams
-	Body   *ProvisionTenantJSONRequestBody
+	TenantId openapi_types.UUID `json:"tenant_id"`
 }
 
 type ProvisionTenantResponseObject interface {
@@ -843,6 +809,14 @@ type ProvisionTenant400Response struct {
 
 func (response ProvisionTenant400Response) VisitProvisionTenantResponse(w http.ResponseWriter) error {
 	w.WriteHeader(400)
+	return nil
+}
+
+type ProvisionTenant404Response struct {
+}
+
+func (response ProvisionTenant404Response) VisitProvisionTenantResponse(w http.ResponseWriter) error {
+	w.WriteHeader(404)
 	return nil
 }
 
@@ -875,7 +849,7 @@ type StrictServerInterface interface {
 	// (POST /receipts)
 	CreateReceipt(ctx context.Context, request CreateReceiptRequestObject) (CreateReceiptResponseObject, error)
 	// Provision finance schema for a tenant
-	// (POST /tenants/provision)
+	// (POST /tenants/{tenant_id}/provision)
 	ProvisionTenant(ctx context.Context, request ProvisionTenantRequestObject) (ProvisionTenantResponseObject, error)
 }
 
@@ -1078,17 +1052,10 @@ func (sh *strictHandler) CreateReceipt(w http.ResponseWriter, r *http.Request, p
 }
 
 // ProvisionTenant operation middleware
-func (sh *strictHandler) ProvisionTenant(w http.ResponseWriter, r *http.Request, params ProvisionTenantParams) {
+func (sh *strictHandler) ProvisionTenant(w http.ResponseWriter, r *http.Request, tenantId openapi_types.UUID) {
 	var request ProvisionTenantRequestObject
 
-	request.Params = params
-
-	var body ProvisionTenantJSONRequestBody
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
-		return
-	}
-	request.Body = &body
+	request.TenantId = tenantId
 
 	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
 		return sh.ssi.ProvisionTenant(ctx, request.(ProvisionTenantRequestObject))

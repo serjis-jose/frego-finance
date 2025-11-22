@@ -4,6 +4,8 @@ import (
 	"context"
 	"log/slog"
 
+	"github.com/google/uuid"
+
 	"frego-finance/internal/service/finance"
 	"frego-finance/internal/service/tenant"
 )
@@ -33,13 +35,9 @@ func NewFinanceHandler(
 
 // ProvisionTenant provisions finance schema for a tenant
 func (h *FinanceHandler) ProvisionTenant(ctx context.Context, request ProvisionTenantRequestObject) (ProvisionTenantResponseObject, error) {
-	tenantID := request.Params.XTenantID
-	var schemaName string
-	if request.Body != nil && request.Body.SchemaName != nil {
-		schemaName = *request.Body.SchemaName
-	}
+	tenantID := uuid.UUID(request.TenantId)
 
-	err := h.tenantService.ProvisionTenant(ctx, tenantID, schemaName)
+	err := h.tenantService.ProvisionTenant(ctx, tenantID, "")
 	if err != nil {
 		h.logger.Error("failed to provision tenant", slog.Any("error", err))
 		return ProvisionTenant500Response{}, nil

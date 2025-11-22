@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
 
 
@@ -25,20 +23,15 @@ services:
       # Application Settings
       HTTP_ADDRESS: :8080
       ENVIRONMENT: development
+      FREGO_INTERNAL_SECRET: ${FREGO_INTERNAL_SECRET}
       
       # Security (mock for development)
       KEYCLOAK_ISSUER: http://localhost:8080/realms/frego
       KEYCLOAK_AUDIENCE: frego-finance
       DEFAULT_TENANT: 550e8400-e29b-41d4-a716-446655440000
-    depends_on:
-
-      # We assume tenant-db is running externally
     restart: unless-stopped
     networks:
       - frego-net
-
-volumes:
-
 
 networks:
   frego-net:
