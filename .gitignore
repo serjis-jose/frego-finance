@@ -1,0 +1,5 @@
+# Ignore sqlc generated Go files (regenerate via `sqlc generate`)
+internal/db/sqlc/*.go
+.cache/
+go.sum
+
