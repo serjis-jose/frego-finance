@@ -1,0 +1,67 @@
+version: '3.8'
+
+services:
+  # Finance Service Database (Local to this service)
+  finance-db:
+    image: postgres:16-alpine
+    container_name: frego-finance-db
+    environment:
+      POSTGRES_DB: frego_finance_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5433:5432"
+    volumes:
+      - finance_db_data:/var/lib/postgresql/data
+      - ./db/provision_tenant.sql:/docker-entrypoint-initdb.d/01-provision.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d frego_finance_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - frego-net
+
+  # Finance Microservice
+  finance-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: frego-finance-service
+    ports:
+      - "8081:8080"
+    environment:
+      # Shared Tenant Database (Connects to backend's container)
+      TENANT_DB_URL: postgres://postgres:postgres@frego-tenant-db:5432/frego_tenant_db?sslmode=disable
+      TENANT_DB_MAX_OPEN_CONNS: 25
+      TENANT_DB_MAX_IDLE_CONNS: 5
+      
+      # Finance Service Database
+      DB_URL: postgres://postgres:postgres@finance-db:5432/frego_finance_db?sslmode=disable
+      DB_MAX_OPEN_CONNS: 25
+      DB_MAX_IDLE_CONNS: 5
+      
+      # Application Settings
+      HTTP_ADDRESS: :8080
+      ENVIRONMENT: development
+      
+      # Security (mock for development)
+      KEYCLOAK_ISSUER: http://localhost:8080/realms/frego
+      KEYCLOAK_AUDIENCE: frego-finance
+      DEFAULT_TENANT: 550e8400-e29b-41d4-a716-446655440000
+    depends_on:
+      finance-db:
+        condition: service_healthy
+      # We assume tenant-db is running externally
+    restart: unless-stopped
+    networks:
+      - frego-net
+
+volumes:
+  finance_db_data:
+    driver: local
+
+networks:
+  frego-net:
+    external: true
+    name: frego-shared-net
