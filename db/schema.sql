@@ -70,6 +70,19 @@ CREATE TABLE IF NOT EXISTS payment_method_lu (
   modified_by  text
 );
 
+-- Payment term master (duplicated from Operations for independence)
+CREATE TABLE IF NOT EXISTS payment_term_lu (
+  id           uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  code         text UNIQUE,
+  name         text UNIQUE,
+  days         int,
+  created_at   timestamptz,
+  created_by   text,
+  modified_at  timestamptz,
+  modified_by  text,
+  is_active    boolean DEFAULT true
+);
+
 -- Bank account master
 CREATE TABLE IF NOT EXISTS bank_account_lu (
   id               uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -257,9 +270,9 @@ CREATE TABLE IF NOT EXISTS journal_entry_lines (
   header_id        uuid NOT NULL REFERENCES journal_entry_header(id) ON DELETE CASCADE,
   line_no          int NOT NULL,
   gl_account_id    uuid NOT NULL REFERENCES gl_account_lu(id),
-  party_id         uuid REFERENCES party_master(id),      -- customer/vendor
-  job_id           uuid REFERENCES ops_job(id),
-  branch_id        uuid REFERENCES branch_lu(branch_id),
+  party_id         uuid, -- REFERENCES party_master(id) -- External: UUID only (customer/vendor)
+  job_id           uuid, -- REFERENCES ops_job(id) -- External: UUID only
+  branch_id        uuid, -- REFERENCES branch_lu(branch_id) -- External: UUID only
   debit_amount     numeric(14,2) DEFAULT 0,
   credit_amount    numeric(14,2) DEFAULT 0,
   narration        text,
@@ -340,16 +353,16 @@ CREATE TABLE IF NOT EXISTS ar_invoice (
   invoice_no               text NOT NULL UNIQUE,
   invoice_type             text NOT NULL,                 -- from Excel
   invoice_date             date NOT NULL,
-  customer_id              uuid NOT NULL REFERENCES party_master(id),
-  job_id                   uuid REFERENCES ops_job(id),
+  customer_id              uuid, -- REFERENCES party_master(id) -- External: UUID only (nullable for Finance independence)
+  job_id                   uuid, -- REFERENCES ops_job(id) -- External: UUID only
   billing_address          text,
   billing_country          text,
   currency_code            char(3) NOT NULL REFERENCES currency_lu(code),
   exchange_rate            numeric(12,6),
-  payment_term_code        text REFERENCES payment_term_lu(code),
+  payment_term_code        text, -- REFERENCES payment_term_lu(code) -- Internal table
   customer_po_number       text,
   customer_po_date         date,
-  sales_executive_id       uuid REFERENCES employee_master(id),
+  sales_executive_id       uuid, -- REFERENCES employee_master(id) -- External: UUID only
 
   subtotal_amount          numeric(14,2),                 -- sum of line amount_without_tax
   tax_amount               numeric(14,2),
@@ -433,7 +446,7 @@ CREATE TABLE IF NOT EXISTS ar_receipt (
   receipt_no                  text NOT NULL UNIQUE,
   receipt_type                text NOT NULL REFERENCES receipt_type_lu(code),
   receipt_date                date NOT NULL,
-  customer_id                 uuid NOT NULL REFERENCES party_master(id),
+  customer_id                 uuid, -- REFERENCES party_master(id) -- External: UUID only (nullable for Finance independence)
   currency_code               char(3) NOT NULL REFERENCES currency_lu(code),
   exchange_rate               numeric(12,6),
   payment_mode_id             smallint REFERENCES payment_method_lu(id),
@@ -517,7 +530,7 @@ CREATE TABLE IF NOT EXISTS ar_credit_note (
 
   credit_note_no                text NOT NULL UNIQUE,
   credit_note_date              date NOT NULL,
-  customer_id                   uuid NOT NULL REFERENCES party_master(id),
+  customer_id                   uuid, -- REFERENCES party_master(id) -- External: UUID only (nullable for Finance independence)
   invoice_id                    uuid REFERENCES ar_invoice(id),
   currency_code                 char(3) NOT NULL REFERENCES currency_lu(code),
   exchange_rate                 numeric(12,6),
@@ -560,12 +573,12 @@ CREATE TABLE IF NOT EXISTS ap_vendor_invoice (
 
   vendor_invoice_no           text NOT NULL,                 -- vendor's invoice number
   system_invoice_no           text NOT NULL UNIQUE,          -- internal number
-  vendor_id                   uuid NOT NULL REFERENCES party_master(id),
+  vendor_id                   uuid, -- REFERENCES party_master(id) -- External: UUID only (nullable for Finance independence)
   invoice_date                date NOT NULL,
   due_date                    date,
-  payment_term_code           text REFERENCES payment_term_lu(code),
+  payment_term_code           text, -- REFERENCES payment_term_lu(code) -- Internal table
   invoice_type                text REFERENCES ap_invoice_category_lu(code),
-  job_id                      uuid REFERENCES ops_job(id),
+  job_id                      uuid, -- REFERENCES ops_job(id) -- External: UUID only
   department_cost_center_code text REFERENCES department_cost_center_lu(code),
   cost_head_gl_account_id     uuid REFERENCES gl_account_lu(id),
   asset_category_code         text REFERENCES asset_category_lu(code),
@@ -612,7 +625,7 @@ CREATE TABLE IF NOT EXISTS ap_vendor_invoice_line (
   vendor_invoice_id         uuid NOT NULL REFERENCES ap_vendor_invoice(id) ON DELETE CASCADE,
   line_no                   int NOT NULL,
 
-  ops_provision_id          uuid REFERENCES ops_provision(id),
+  ops_provision_id          uuid, -- REFERENCES ops_provision(id) -- External: UUID only
   item_description          text NOT NULL,
   quantity                  numeric(14,3),
   unit_price                numeric(14,2),
@@ -645,7 +658,7 @@ CREATE TABLE IF NOT EXISTS ap_payment_against_invoice (
 
   payment_voucher_no          text NOT NULL UNIQUE,
   payment_date                date NOT NULL,
-  vendor_id                   uuid NOT NULL REFERENCES party_master(id),
+  vendor_id                   uuid, -- REFERENCES party_master(id) -- External: UUID only (nullable for Finance independence)
   payment_type                text NOT NULL REFERENCES ap_payment_application_type_lu(code),
   vendor_invoice_id           uuid REFERENCES ap_vendor_invoice(id),
   invoice_type                text REFERENCES ap_invoice_category_lu(code),
@@ -695,8 +708,8 @@ CREATE TABLE IF NOT EXISTS ap_payment_without_invoice (
   payment_voucher_no          text NOT NULL UNIQUE,
   payment_date                date NOT NULL,
   payment_type                text NOT NULL REFERENCES ap_invoice_category_lu(code),
-  job_id                      uuid REFERENCES ops_job(id),
-  party_id                    uuid REFERENCES party_master(id),
+  job_id                      uuid, -- REFERENCES ops_job(id) -- External: UUID only
+  party_id                    uuid, -- REFERENCES party_master(id) -- External: UUID only
   vendor_code_snapshot        text,
   currency_code               char(3) NOT NULL REFERENCES currency_lu(code),
   exchange_rate               numeric(12,6),
@@ -749,7 +762,7 @@ CREATE TABLE IF NOT EXISTS ap_debit_note (
 
   debit_note_no               text NOT NULL UNIQUE,
   debit_note_date             date NOT NULL,
-  vendor_id                   uuid NOT NULL REFERENCES party_master(id),
+  vendor_id                   uuid, -- REFERENCES party_master(id) -- External: UUID only (nullable for Finance independence)
   vendor_invoice_id           uuid REFERENCES ap_vendor_invoice(id),
   currency_code               char(3) NOT NULL REFERENCES currency_lu(code),
   exchange_rate               numeric(12,6),

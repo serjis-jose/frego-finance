@@ -31,10 +31,10 @@ echo " Ready!"
 
 echo ""
 echo "Checking for Shared Tenant DB..."
-if docker ps | grep -q frego-tenant-db; then
-    echo "  ✓ Found shared frego-tenant-db (running)"
+if docker ps | grep -q "frego-backend.*postgres"; then
+    echo "  ✓ Found shared postgres-db (running)"
 else
-    echo "  ⚠️  Shared frego-tenant-db NOT found!"
+    echo "  ⚠️  Shared postgres-db NOT found (expected frego-backend container)!"
     echo "      Please start frego-backend first to provide the shared registry."
 fi
 

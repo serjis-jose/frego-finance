@@ -255,24 +255,25 @@ paths:
               schema:
                 $ref: '#/components/schemas/Receipt'
 
-  /tenants/provision:
+  /tenants/{tenant_id}/provision:
     post:
       summary: Provision finance schema for a tenant
       operationId: provisionTenant
+      description: Creates finance schema for the tenant. Schema name is auto-generated as 'finance_{tenant_id}'.
       parameters:
-        - $ref: '#/components/parameters/TenantID'
-      requestBody:
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                schema_name:
-                  type: string
+        - name: tenant_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Tenant identifier
       responses:
         '200':
           description: Tenant provisioned successfully
         '400':
           description: Bad request
+        '404':
+          description: Tenant not found
         '500':
           description: Internal server error

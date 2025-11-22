@@ -5,7 +5,7 @@
 set -euo pipefail
 
 TENANT_DB_URL=${TENANT_DB_URL:-postgres://postgres:postgres@localhost:5432/frego_tenant_db}
-ERP_DB_URL=${ERP_DB_URL:-postgres://postgres:postgres@localhost:5432/frego_erp_db}
+ERP_DB_URL=${ERP_DB_URL:-postgres://postgres:postgres@localhost:5432/frego_operations_db}
 FINANCE_DB_URL=${FINANCE_DB_URL:-postgres://postgres:postgres@localhost:5433/frego_finance_db}
 
 echo "============================================"
