@@ -20,8 +20,9 @@ type Config struct {
 	// Service-specific Database
 	Database DatabaseConfig
 
-	Security SecurityConfig
-	Storage  StorageConfig
+	Security       SecurityConfig
+	Storage        StorageConfig
+	InternalSecret string `env:"FREGO_INTERNAL_SECRET"`
 }
 
 type DatabaseConfig struct {

@@ -114,7 +114,7 @@ func main() {
 	})
 
 	// Tenant provisioning handler (for backend-to-finance communication)
-	tenantHandler := api.NewTenantHandler(logger, tenantService)
+	tenantHandler := api.NewTenantHandler(logger, tenantService, cfg.InternalSecret)
 	tenantRouter := chi.NewRouter()
 	tenantHandler.RegisterRoutes(tenantRouter)
 

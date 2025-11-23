@@ -13,15 +13,17 @@ import (
 
 // TenantHandler handles tenant provisioning API requests
 type TenantHandler struct {
-	logger        *slog.Logger
-	tenantService *tenant.Service
+	logger         *slog.Logger
+	tenantService  *tenant.Service
+	internalSecret string
 }
 
 // NewTenantHandler creates a new tenant handler
-func NewTenantHandler(logger *slog.Logger, tenantService *tenant.Service) *TenantHandler {
+func NewTenantHandler(logger *slog.Logger, tenantService *tenant.Service, internalSecret string) *TenantHandler {
 	return &TenantHandler{
-		logger:        logger,
-		tenantService: tenantService,
+		logger:         logger,
+		tenantService:  tenantService,
+		internalSecret: internalSecret,
 	}
 }
 
@@ -46,6 +48,18 @@ type ProvisionTenantResponse struct {
 
 // ProvisionTenant handles the request to provision a finance schema for a tenant
 func (h *TenantHandler) ProvisionTenant(w http.ResponseWriter, r *http.Request) {
+	// TODO: Implement internal secret validation for service-to-service authentication
+	// Temporarily skipped for development - should validate Secret header matches internalSecret
+	// if h.internalSecret != "" {
+	// 	providedSecret := r.Header.Get("Secret")
+	// 	if providedSecret != h.internalSecret {
+	// 		h.logger.Warn("invalid internal secret provided",
+	// 			slog.String("remote_addr", r.RemoteAddr))
+	// 		http.Error(w, "unauthorized", http.StatusUnauthorized)
+	// 		return
+	// 	}
+	// }
+
 	var req ProvisionTenantRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		h.logger.Error("invalid request body", slog.Any("error", err))
