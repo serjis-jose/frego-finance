@@ -60,7 +60,22 @@ if [ "${DB_EXISTS}" != "1" ]; then
     -c "CREATE DATABASE \"${FINANCE_DB_NAME}\" OWNER \"${FINANCE_DB_OWNER}\""
 else
   echo "    database ${FINANCE_DB_NAME} already exists"
+  echo "    ensuring database ownership is set to ${FINANCE_DB_OWNER}"
+  psql -v ON_ERROR_STOP=1 \
+    -h "${FINANCE_DB_HOST}" \
+    -p "${FINANCE_DB_PORT}" \
+    -U "${FINANCE_DB_SUPERUSER}" \
+    -d postgres \
+    -c "ALTER DATABASE \"${FINANCE_DB_NAME}\" OWNER TO \"${FINANCE_DB_OWNER}\""
 fi
+
+echo "==> Creating uuid-ossp extension..."
+psql -v ON_ERROR_STOP=1 \
+  -h "${FINANCE_DB_HOST}" \
+  -p "${FINANCE_DB_PORT}" \
+  -U "${FINANCE_DB_SUPERUSER}" \
+  -d "${FINANCE_DB_NAME}" \
+  -c "CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\";"
 
 if [ ! -f "${PROVISION_FILE}" ]; then
   echo "ERROR: provisioning SQL not found at ${PROVISION_FILE}" >&2

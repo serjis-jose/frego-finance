@@ -19,10 +19,17 @@ BEGIN;
     END IF;
 
     -- Determine schema name
+    -- If schema is provided, strip 'ops_' prefix if present and use 'fin_' prefix
+    -- Otherwise, generate from tenant_id
     IF schema_input IS NOT NULL THEN
-      tenant_schema := schema_input;
+      -- If schema starts with 'ops_', replace with 'fin_'
+      IF schema_input LIKE 'ops_%' THEN
+        tenant_schema := 'fin_' || substring(schema_input from 5); -- Remove 'ops_' (4 chars) prefix
+      ELSE
+        tenant_schema := schema_input;
+      END IF;
     ELSE
-      tenant_schema := 'finance_' || regexp_replace(lower(tenant_id_text), '[^a-z0-9_]', '_', 'g');
+      tenant_schema := 'fin_' || regexp_replace(lower(tenant_id_text), '[^a-z0-9_]', '_', 'g');
     END IF;
 
     -- Create Schema
@@ -32,9 +39,8 @@ BEGIN;
     EXECUTE format('SET search_path TO %I, public', tenant_schema);
 
     -- Create all finance tables in the tenant schema
+    -- Note: uuid-ossp extension should be created at database level (done in bootstrap)
     EXECUTE format($ddl$
-
-    CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
     -- ============================================================
     --  CORE LOOKUPS

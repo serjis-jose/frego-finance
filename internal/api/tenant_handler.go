@@ -34,9 +34,9 @@ func (h *TenantHandler) RegisterRoutes(r chi.Router) {
 
 // ProvisionTenantRequest defines the request body for tenant provisioning
 type ProvisionTenantRequest struct {
-	TenantID   uuid.UUID `json:"tenantId"`
-	SchemaName *string   `json:"schemaName,omitempty"`
-	Actor      *string   `json:"actor,omitempty"`
+	TenantID    uuid.UUID `json:"tenantId"`
+	DisplayName *string   `json:"displayName,omitempty"`
+	Actor       *string   `json:"actor,omitempty"`
 }
 
 // ProvisionTenantResponse defines the response for tenant provisioning
@@ -72,9 +72,14 @@ func (h *TenantHandler) ProvisionTenant(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	displayName := ""
+	if req.DisplayName != nil {
+		displayName = *req.DisplayName
+	}
+
 	h.logger.Info("received finance provisioning request",
 		slog.String("tenant_id", req.TenantID.String()),
-		slog.Any("schema_name", req.SchemaName))
+		slog.String("display_name", displayName))
 
 	// Set actor for database operations if provided
 	ctx := r.Context()
@@ -84,16 +89,11 @@ func (h *TenantHandler) ProvisionTenant(w http.ResponseWriter, r *http.Request) 
 		ctx = r.Context()
 	}
 
-	schemaName := ""
-	if req.SchemaName != nil {
-		schemaName = *req.SchemaName
-	}
-
-	err := h.tenantService.ProvisionTenant(ctx, req.TenantID, schemaName)
+	err := h.tenantService.ProvisionTenant(ctx, req.TenantID, displayName)
 	if err != nil {
 		h.logger.Error("failed to provision finance tenant schema",
 			slog.String("tenant_id", req.TenantID.String()),
-			slog.Any("schema_name", req.SchemaName),
+			slog.String("display_name", displayName),
 			slog.Any("error", err))
 		http.Error(w, "failed to provision finance schema", http.StatusInternalServerError)
 		return

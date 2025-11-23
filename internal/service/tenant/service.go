@@ -21,8 +21,8 @@ func New(repo *tenant.Repository) *Service {
 }
 
 // ProvisionTenant provisions a new tenant
-func (s *Service) ProvisionTenant(ctx context.Context, tenantID uuid.UUID, schemaName string) error {
-	return s.repo.ProvisionTenant(ctx, tenantID, schemaName)
+func (s *Service) ProvisionTenant(ctx context.Context, tenantID uuid.UUID, displayName string) error {
+	return s.repo.ProvisionTenant(ctx, tenantID, displayName)
 }
 
 // GetTenantSchema gets the schema name for a tenant

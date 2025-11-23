@@ -26,16 +26,37 @@ func New(tenantPool, financePool *pgxpool.Pool, dbUser string) *Repository {
 	}
 }
 
+var (
+	schemaUnsafeChars     = regexp.MustCompile(`[^a-z0-9_]`)
+	schemaMultiUnderscore = regexp.MustCompile(`_{2,}`)
+)
+
+// sanitizeSchemaSlug sanitizes a display name into a valid schema slug
+func sanitizeSchemaSlug(value string) string {
+	slug := strings.ToLower(strings.TrimSpace(value))
+	slug = schemaUnsafeChars.ReplaceAllString(slug, "_")
+	slug = schemaMultiUnderscore.ReplaceAllString(slug, "_")
+	return strings.Trim(slug, "_")
+}
+
 // ProvisionTenant creates a new tenant schema
-func (r *Repository) ProvisionTenant(ctx context.Context, tenantID uuid.UUID, schemaName string) error {
-	// 0. Validate optional schema name (must match allowed pattern)
-	if schemaName != "" {
-		if matched, _ := regexp.MatchString(`^[a-z0-9_]+$`, schemaName); !matched {
-			return fmt.Errorf("invalid schema name: %s", schemaName)
+func (r *Repository) ProvisionTenant(ctx context.Context, tenantID uuid.UUID, displayName string) error {
+	// 1. Compute schema name from displayName (matching backend logic)
+	var schemaName string
+	if displayName != "" {
+		if slug := sanitizeSchemaSlug(displayName); slug != "" {
+			schemaName = "fin_" + slug
 		}
 	}
 
-	// 1. Insert audit log entry with pending status
+	// If no schema name from displayName, generate from tenant_id
+	if schemaName == "" {
+		tenantIDStr := strings.ToLower(tenantID.String())
+		sanitized := schemaUnsafeChars.ReplaceAllString(tenantIDStr, "_")
+		schemaName = "fin_" + sanitized
+	}
+
+	// 2. Insert audit log entry with pending status
 	_, logErr := r.tenantPool.Exec(ctx, `
 		INSERT INTO tenant_module_log (tenant_id, module_name, action, schema_name, status, provisioned_by)
 		VALUES ($1, 'finance', 'provision', $2, 'pending', current_user)
@@ -45,7 +66,8 @@ func (r *Repository) ProvisionTenant(ctx context.Context, tenantID uuid.UUID, sc
 		logErr = fmt.Errorf("audit log insert failed: %w", logErr)
 	}
 
-	// 2. Provision schema in finance DB
+	// 3. Provision schema in finance DB
+	// Pass the computed schema name (stored procedure will use it as-is since it already has "finance_" prefix)
 	_, err := r.financePool.Exec(ctx, `
 		CALL ensure_finance_tenant_schema($1, $2, $3)
 	`, tenantID, schemaName, r.dbUser)
@@ -61,47 +83,12 @@ func (r *Repository) ProvisionTenant(ctx context.Context, tenantID uuid.UUID, sc
 		return fmt.Errorf("provision tenant schema: %w", err)
 	}
 
-	// 3. Determine final schema name (same logic as procedure)
-	finalSchemaName := schemaName
-	if finalSchemaName == "" {
-		// Replicate the logic from SQL procedure: 'finance_' || sanitized_uuid
-		// This is slightly risky if logic diverges, but acceptable for now.
-		// Or we can query the DB to find the schema, but that's complex.
-		// Better approach: The caller should ideally provide the schema name or we enforce a standard.
-		// Let's replicate the standard logic for now.
-		// tenant_id is UUID, so just "finance_" + sanitized UUID string
-		// UUID string is already safe-ish but let's be sure.
-		finalSchemaName = fmt.Sprintf("finance_%s", tenantID.String())
-		// The SQL uses: regexp_replace(lower(tenant_id_text), '[^a-z0-9_]', '_', 'g')
-		// UUIDs only have hyphens which are replaced by underscores in some logic, but here it seems standard.
-		// Let's stick to the SQL logic: replace non-alphanumeric with underscore.
-		// Actually, UUID string format is standard.
-		// Let's just use the provided schemaName if present, else update with the standard convention.
-		// Wait, if I don't know exactly what the procedure did, I might store the wrong name.
-		// A better way is to update the procedure to return the name, or just rely on the convention.
-		// Let's rely on the convention: finance_{uuid_with_underscores}
-		// But wait, the SQL procedure replaces hyphens with underscores?
-		// "regexp_replace(lower(tenant_id_text), '[^a-z0-9_]', '_', 'g')"
-		// Yes, hyphens become underscores.
-	}
-
-	// To be safe and consistent, let's update the registry with the schema name.
-	// We need to make sure this matches what was created.
-	// If schemaName was passed, we use that.
-	// If not, we construct it.
-
-	if finalSchemaName == "" {
-		// Simple implementation of the SQL logic
-		s := strings.ReplaceAll(tenantID.String(), "-", "_")
-		finalSchemaName = "finance_" + s
-	}
-
-	// 3. Update tenant registry in tenant DB
+	// 4. Update tenant registry in tenant DB with the computed schema name
 	_, err = r.tenantPool.Exec(ctx, `
 		UPDATE tenant_registry 
 		SET finance_schema = $2, modified_at = now()
 		WHERE tenant_id = $1
-	`, tenantID, finalSchemaName)
+	`, tenantID, schemaName)
 
 	if err != nil {
 		// Note: Schema is created but registry update failed. This is an inconsistency.
