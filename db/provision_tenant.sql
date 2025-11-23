@@ -1,4 +1,4 @@
-BEGIN
+BEGIN;
   CREATE OR REPLACE PROCEDURE ensure_finance_tenant_schema(
     p_tenant_id uuid DEFAULT NULL,
     p_schema text DEFAULT NULL
@@ -846,6 +846,15 @@ BEGIN
     CREATE INDEX IF NOT EXISTS idx_finance_module_log_status
       ON finance_module_log(status);
 
+    $ddl$, tenant_schema);
+
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'erp_user') THEN
+      EXECUTE format('GRANT USAGE ON SCHEMA %I TO erp_user', tenant_schema);
+      EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA %I TO erp_user', tenant_schema);
+      EXECUTE format('GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA %I TO erp_user', tenant_schema);
+    END IF;
+
     COMMIT;
   END;
   $$;
+COMMIT;
