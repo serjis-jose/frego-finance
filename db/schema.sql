@@ -476,6 +476,7 @@ CREATE TABLE IF NOT EXISTS ar_receipt (
 
   approval_status             text REFERENCES approval_status_lu(code),
   approval_remarks            text,
+  invoice_status              text,
   gl_posting_status           text,
   posting_reference_no        text,
 
@@ -791,7 +792,7 @@ CREATE TABLE IF NOT EXISTS ap_debit_note (
 );
 
 CREATE INDEX IF NOT EXISTS idx_ap_debit_note_vendor
-  ON ap_debit_note(vendor_id, debit_note_date);
+  ON ap_debit_note(vendor_id, invoice_status);
 
 -- ============================================================
 --  APPROVAL HISTORY + TRIGGER

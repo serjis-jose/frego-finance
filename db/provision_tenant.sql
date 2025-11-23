@@ -816,6 +816,7 @@ BEGIN;
 
       approval_status             text REFERENCES approval_status_lu(code),
       approval_remarks            text,
+      invoice_status              text,
       gl_posting_status           text,
       posting_reference_no        text,
 
@@ -839,7 +840,7 @@ BEGIN;
 
     CREATE TABLE IF NOT EXISTS finance_module_log (
       id                uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
-      tenant_id         uuid NOT NULL REFERENCES tenant_registry(tenant_id),
+      tenant_id         uuid NOT NULL,   -- references tenant_registry in shared tenant DB
       action            text NOT NULL,   -- 'provision', 'deprovision', 'update'
       schema_name       text,
       status            text NOT NULL,   -- 'pending', 'success', 'failed'
