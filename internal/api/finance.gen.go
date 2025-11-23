@@ -64,42 +64,30 @@ type Receipt struct {
 	ReceivedAmountCustomer *float64            `json:"received_amount_customer,omitempty"`
 }
 
-// TenantID defines model for TenantID.
-type TenantID = openapi_types.UUID
-
 // ListInvoicesParams defines parameters for ListInvoices.
 type ListInvoicesParams struct {
 	CustomerId *openapi_types.UUID `form:"customer_id,omitempty" json:"customer_id,omitempty"`
 	Status     *string             `form:"status,omitempty" json:"status,omitempty"`
 	Limit      *int                `form:"limit,omitempty" json:"limit,omitempty"`
 	Offset     *int                `form:"offset,omitempty" json:"offset,omitempty"`
-
-	// XTenantID Tenant identifier
-	XTenantID TenantID `json:"X-Tenant-ID"`
 }
 
-// CreateInvoiceParams defines parameters for CreateInvoice.
-type CreateInvoiceParams struct {
-	// XTenantID Tenant identifier
-	XTenantID TenantID `json:"X-Tenant-ID"`
+// ProvisionTenantJSONBody defines parameters for ProvisionTenant.
+type ProvisionTenantJSONBody struct {
+	// Actor User/actor performing the provisioning
+	Actor *string `json:"actor,omitempty"`
+
+	// DisplayName Tenant display name (used to compute schema name)
+	DisplayName *string `json:"displayName,omitempty"`
+
+	// TenantId Tenant identifier
+	TenantId openapi_types.UUID `json:"tenantId"`
 }
 
-// GetInvoiceParams defines parameters for GetInvoice.
-type GetInvoiceParams struct {
-	// XTenantID Tenant identifier
-	XTenantID TenantID `json:"X-Tenant-ID"`
-}
-
-// ListReceiptsParams defines parameters for ListReceipts.
-type ListReceiptsParams struct {
-	// XTenantID Tenant identifier
-	XTenantID TenantID `json:"X-Tenant-ID"`
-}
-
-// CreateReceiptParams defines parameters for CreateReceipt.
-type CreateReceiptParams struct {
-	// XTenantID Tenant identifier
-	XTenantID TenantID `json:"X-Tenant-ID"`
+// ProvisionTenantParams defines parameters for ProvisionTenant.
+type ProvisionTenantParams struct {
+	// Secret Internal secret used for provisioning authorization
+	Secret string `json:"Secret"`
 }
 
 // CreateInvoiceJSONRequestBody defines body for CreateInvoice for application/json ContentType.
@@ -107,6 +95,9 @@ type CreateInvoiceJSONRequestBody = Invoice
 
 // CreateReceiptJSONRequestBody defines body for CreateReceipt for application/json ContentType.
 type CreateReceiptJSONRequestBody = Receipt
+
+// ProvisionTenantJSONRequestBody defines body for ProvisionTenant for application/json ContentType.
+type ProvisionTenantJSONRequestBody ProvisionTenantJSONBody
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
@@ -118,19 +109,19 @@ type ServerInterface interface {
 	ListInvoices(w http.ResponseWriter, r *http.Request, params ListInvoicesParams)
 	// Create invoice
 	// (POST /invoices)
-	CreateInvoice(w http.ResponseWriter, r *http.Request, params CreateInvoiceParams)
+	CreateInvoice(w http.ResponseWriter, r *http.Request)
 	// Get invoice
 	// (GET /invoices/{invoice_id})
-	GetInvoice(w http.ResponseWriter, r *http.Request, invoiceId openapi_types.UUID, params GetInvoiceParams)
+	GetInvoice(w http.ResponseWriter, r *http.Request, invoiceId openapi_types.UUID)
 	// List receipts
 	// (GET /receipts)
-	ListReceipts(w http.ResponseWriter, r *http.Request, params ListReceiptsParams)
+	ListReceipts(w http.ResponseWriter, r *http.Request)
 	// Create receipt
 	// (POST /receipts)
-	CreateReceipt(w http.ResponseWriter, r *http.Request, params CreateReceiptParams)
+	CreateReceipt(w http.ResponseWriter, r *http.Request)
 	// Provision finance schema for a tenant
-	// (POST /tenants/{tenant_id}/provision)
-	ProvisionTenant(w http.ResponseWriter, r *http.Request, tenantId openapi_types.UUID)
+	// (POST /tenants/provision)
+	ProvisionTenant(w http.ResponseWriter, r *http.Request, params ProvisionTenantParams)
 }
 
 // Unimplemented server implementation that returns http.StatusNotImplemented for each endpoint.
@@ -151,31 +142,31 @@ func (_ Unimplemented) ListInvoices(w http.ResponseWriter, r *http.Request, para
 
 // Create invoice
 // (POST /invoices)
-func (_ Unimplemented) CreateInvoice(w http.ResponseWriter, r *http.Request, params CreateInvoiceParams) {
+func (_ Unimplemented) CreateInvoice(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
 // Get invoice
 // (GET /invoices/{invoice_id})
-func (_ Unimplemented) GetInvoice(w http.ResponseWriter, r *http.Request, invoiceId openapi_types.UUID, params GetInvoiceParams) {
+func (_ Unimplemented) GetInvoice(w http.ResponseWriter, r *http.Request, invoiceId openapi_types.UUID) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
 // List receipts
 // (GET /receipts)
-func (_ Unimplemented) ListReceipts(w http.ResponseWriter, r *http.Request, params ListReceiptsParams) {
+func (_ Unimplemented) ListReceipts(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
 // Create receipt
 // (POST /receipts)
-func (_ Unimplemented) CreateReceipt(w http.ResponseWriter, r *http.Request, params CreateReceiptParams) {
+func (_ Unimplemented) CreateReceipt(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
 // Provision finance schema for a tenant
-// (POST /tenants/{tenant_id}/provision)
-func (_ Unimplemented) ProvisionTenant(w http.ResponseWriter, r *http.Request, tenantId openapi_types.UUID) {
+// (POST /tenants/provision)
+func (_ Unimplemented) ProvisionTenant(w http.ResponseWriter, r *http.Request, params ProvisionTenantParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -246,31 +237,6 @@ func (siw *ServerInterfaceWrapper) ListInvoices(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	headers := r.Header
-
-	// ------------- Required header parameter "X-Tenant-ID" -------------
-	if valueList, found := headers[http.CanonicalHeaderKey("X-Tenant-ID")]; found {
-		var XTenantID TenantID
-		n := len(valueList)
-		if n != 1 {
-			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-Tenant-ID", Count: n})
-			return
-		}
-
-		err = runtime.BindStyledParameterWithLocation("simple", false, "X-Tenant-ID", runtime.ParamLocationHeader, valueList[0], &XTenantID)
-		if err != nil {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-Tenant-ID", Err: err})
-			return
-		}
-
-		params.XTenantID = XTenantID
-
-	} else {
-		err := fmt.Errorf("Header parameter X-Tenant-ID is required, but not found")
-		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-Tenant-ID", Err: err})
-		return
-	}
-
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ListInvoices(w, r, params)
 	}))
@@ -286,40 +252,10 @@ func (siw *ServerInterfaceWrapper) ListInvoices(w http.ResponseWriter, r *http.R
 func (siw *ServerInterfaceWrapper) CreateInvoice(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	var err error
-
 	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
 
-	// Parameter object where we will unmarshal all parameters from the context
-	var params CreateInvoiceParams
-
-	headers := r.Header
-
-	// ------------- Required header parameter "X-Tenant-ID" -------------
-	if valueList, found := headers[http.CanonicalHeaderKey("X-Tenant-ID")]; found {
-		var XTenantID TenantID
-		n := len(valueList)
-		if n != 1 {
-			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-Tenant-ID", Count: n})
-			return
-		}
-
-		err = runtime.BindStyledParameterWithLocation("simple", false, "X-Tenant-ID", runtime.ParamLocationHeader, valueList[0], &XTenantID)
-		if err != nil {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-Tenant-ID", Err: err})
-			return
-		}
-
-		params.XTenantID = XTenantID
-
-	} else {
-		err := fmt.Errorf("Header parameter X-Tenant-ID is required, but not found")
-		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-Tenant-ID", Err: err})
-		return
-	}
-
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.CreateInvoice(w, r, params)
+		siw.Handler.CreateInvoice(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -346,36 +282,8 @@ func (siw *ServerInterfaceWrapper) GetInvoice(w http.ResponseWriter, r *http.Req
 
 	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
 
-	// Parameter object where we will unmarshal all parameters from the context
-	var params GetInvoiceParams
-
-	headers := r.Header
-
-	// ------------- Required header parameter "X-Tenant-ID" -------------
-	if valueList, found := headers[http.CanonicalHeaderKey("X-Tenant-ID")]; found {
-		var XTenantID TenantID
-		n := len(valueList)
-		if n != 1 {
-			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-Tenant-ID", Count: n})
-			return
-		}
-
-		err = runtime.BindStyledParameterWithLocation("simple", false, "X-Tenant-ID", runtime.ParamLocationHeader, valueList[0], &XTenantID)
-		if err != nil {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-Tenant-ID", Err: err})
-			return
-		}
-
-		params.XTenantID = XTenantID
-
-	} else {
-		err := fmt.Errorf("Header parameter X-Tenant-ID is required, but not found")
-		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-Tenant-ID", Err: err})
-		return
-	}
-
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.GetInvoice(w, r, invoiceId, params)
+		siw.Handler.GetInvoice(w, r, invoiceId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -389,40 +297,10 @@ func (siw *ServerInterfaceWrapper) GetInvoice(w http.ResponseWriter, r *http.Req
 func (siw *ServerInterfaceWrapper) ListReceipts(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	var err error
-
 	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
 
-	// Parameter object where we will unmarshal all parameters from the context
-	var params ListReceiptsParams
-
-	headers := r.Header
-
-	// ------------- Required header parameter "X-Tenant-ID" -------------
-	if valueList, found := headers[http.CanonicalHeaderKey("X-Tenant-ID")]; found {
-		var XTenantID TenantID
-		n := len(valueList)
-		if n != 1 {
-			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-Tenant-ID", Count: n})
-			return
-		}
-
-		err = runtime.BindStyledParameterWithLocation("simple", false, "X-Tenant-ID", runtime.ParamLocationHeader, valueList[0], &XTenantID)
-		if err != nil {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-Tenant-ID", Err: err})
-			return
-		}
-
-		params.XTenantID = XTenantID
-
-	} else {
-		err := fmt.Errorf("Header parameter X-Tenant-ID is required, but not found")
-		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-Tenant-ID", Err: err})
-		return
-	}
-
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.ListReceipts(w, r, params)
+		siw.Handler.ListReceipts(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -436,40 +314,10 @@ func (siw *ServerInterfaceWrapper) ListReceipts(w http.ResponseWriter, r *http.R
 func (siw *ServerInterfaceWrapper) CreateReceipt(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	var err error
-
 	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
 
-	// Parameter object where we will unmarshal all parameters from the context
-	var params CreateReceiptParams
-
-	headers := r.Header
-
-	// ------------- Required header parameter "X-Tenant-ID" -------------
-	if valueList, found := headers[http.CanonicalHeaderKey("X-Tenant-ID")]; found {
-		var XTenantID TenantID
-		n := len(valueList)
-		if n != 1 {
-			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-Tenant-ID", Count: n})
-			return
-		}
-
-		err = runtime.BindStyledParameterWithLocation("simple", false, "X-Tenant-ID", runtime.ParamLocationHeader, valueList[0], &XTenantID)
-		if err != nil {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-Tenant-ID", Err: err})
-			return
-		}
-
-		params.XTenantID = XTenantID
-
-	} else {
-		err := fmt.Errorf("Header parameter X-Tenant-ID is required, but not found")
-		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-Tenant-ID", Err: err})
-		return
-	}
-
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.CreateReceipt(w, r, params)
+		siw.Handler.CreateReceipt(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -485,19 +333,36 @@ func (siw *ServerInterfaceWrapper) ProvisionTenant(w http.ResponseWriter, r *htt
 
 	var err error
 
-	// ------------- Path parameter "tenant_id" -------------
-	var tenantId openapi_types.UUID
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ProvisionTenantParams
 
-	err = runtime.BindStyledParameterWithLocation("simple", false, "tenant_id", runtime.ParamLocationPath, chi.URLParam(r, "tenant_id"), &tenantId)
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "tenant_id", Err: err})
+	headers := r.Header
+
+	// ------------- Required header parameter "Secret" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Secret")]; found {
+		var Secret string
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Secret", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithLocation("simple", false, "Secret", runtime.ParamLocationHeader, valueList[0], &Secret)
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Secret", Err: err})
+			return
+		}
+
+		params.Secret = Secret
+
+	} else {
+		err := fmt.Errorf("Header parameter Secret is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "Secret", Err: err})
 		return
 	}
 
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
-
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.ProvisionTenant(w, r, tenantId)
+		siw.Handler.ProvisionTenant(w, r, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -639,7 +504,7 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Post(options.BaseURL+"/receipts", wrapper.CreateReceipt)
 	})
 	r.Group(func(r chi.Router) {
-		r.Post(options.BaseURL+"/tenants/{tenant_id}/provision", wrapper.ProvisionTenant)
+		r.Post(options.BaseURL+"/tenants/provision", wrapper.ProvisionTenant)
 	})
 
 	return r
@@ -699,8 +564,7 @@ func (response ListInvoices403Response) VisitListInvoicesResponse(w http.Respons
 }
 
 type CreateInvoiceRequestObject struct {
-	Params CreateInvoiceParams
-	Body   *CreateInvoiceJSONRequestBody
+	Body *CreateInvoiceJSONRequestBody
 }
 
 type CreateInvoiceResponseObject interface {
@@ -727,7 +591,6 @@ func (response CreateInvoice400JSONResponse) VisitCreateInvoiceResponse(w http.R
 
 type GetInvoiceRequestObject struct {
 	InvoiceId openapi_types.UUID `json:"invoice_id"`
-	Params    GetInvoiceParams
 }
 
 type GetInvoiceResponseObject interface {
@@ -752,7 +615,6 @@ func (response GetInvoice404Response) VisitGetInvoiceResponse(w http.ResponseWri
 }
 
 type ListReceiptsRequestObject struct {
-	Params ListReceiptsParams
 }
 
 type ListReceiptsResponseObject interface {
@@ -771,8 +633,7 @@ func (response ListReceipts200JSONResponse) VisitListReceiptsResponse(w http.Res
 }
 
 type CreateReceiptRequestObject struct {
-	Params CreateReceiptParams
-	Body   *CreateReceiptJSONRequestBody
+	Body *CreateReceiptJSONRequestBody
 }
 
 type CreateReceiptResponseObject interface {
@@ -789,43 +650,43 @@ func (response CreateReceipt201JSONResponse) VisitCreateReceiptResponse(w http.R
 }
 
 type ProvisionTenantRequestObject struct {
-	TenantId openapi_types.UUID `json:"tenant_id"`
+	Params ProvisionTenantParams
+	Body   *ProvisionTenantJSONRequestBody
 }
 
 type ProvisionTenantResponseObject interface {
 	VisitProvisionTenantResponse(w http.ResponseWriter) error
 }
 
-type ProvisionTenant200Response struct {
+type ProvisionTenant200JSONResponse struct {
+	Message    *string             `json:"message,omitempty"`
+	SchemaName *string             `json:"schemaName,omitempty"`
+	TenantId   *openapi_types.UUID `json:"tenantId,omitempty"`
 }
 
-func (response ProvisionTenant200Response) VisitProvisionTenantResponse(w http.ResponseWriter) error {
+func (response ProvisionTenant200JSONResponse) VisitProvisionTenantResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(200)
-	return nil
+
+	return json.NewEncoder(w).Encode(response)
 }
 
-type ProvisionTenant400Response struct {
-}
+type ProvisionTenant400JSONResponse Error
 
-func (response ProvisionTenant400Response) VisitProvisionTenantResponse(w http.ResponseWriter) error {
+func (response ProvisionTenant400JSONResponse) VisitProvisionTenantResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(400)
-	return nil
+
+	return json.NewEncoder(w).Encode(response)
 }
 
-type ProvisionTenant404Response struct {
-}
+type ProvisionTenant500JSONResponse Error
 
-func (response ProvisionTenant404Response) VisitProvisionTenantResponse(w http.ResponseWriter) error {
-	w.WriteHeader(404)
-	return nil
-}
-
-type ProvisionTenant500Response struct {
-}
-
-func (response ProvisionTenant500Response) VisitProvisionTenantResponse(w http.ResponseWriter) error {
+func (response ProvisionTenant500JSONResponse) VisitProvisionTenantResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(500)
-	return nil
+
+	return json.NewEncoder(w).Encode(response)
 }
 
 // StrictServerInterface represents all server handlers.
@@ -849,7 +710,7 @@ type StrictServerInterface interface {
 	// (POST /receipts)
 	CreateReceipt(ctx context.Context, request CreateReceiptRequestObject) (CreateReceiptResponseObject, error)
 	// Provision finance schema for a tenant
-	// (POST /tenants/{tenant_id}/provision)
+	// (POST /tenants/provision)
 	ProvisionTenant(ctx context.Context, request ProvisionTenantRequestObject) (ProvisionTenantResponseObject, error)
 }
 
@@ -933,10 +794,8 @@ func (sh *strictHandler) ListInvoices(w http.ResponseWriter, r *http.Request, pa
 }
 
 // CreateInvoice operation middleware
-func (sh *strictHandler) CreateInvoice(w http.ResponseWriter, r *http.Request, params CreateInvoiceParams) {
+func (sh *strictHandler) CreateInvoice(w http.ResponseWriter, r *http.Request) {
 	var request CreateInvoiceRequestObject
-
-	request.Params = params
 
 	var body CreateInvoiceJSONRequestBody
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -966,11 +825,10 @@ func (sh *strictHandler) CreateInvoice(w http.ResponseWriter, r *http.Request, p
 }
 
 // GetInvoice operation middleware
-func (sh *strictHandler) GetInvoice(w http.ResponseWriter, r *http.Request, invoiceId openapi_types.UUID, params GetInvoiceParams) {
+func (sh *strictHandler) GetInvoice(w http.ResponseWriter, r *http.Request, invoiceId openapi_types.UUID) {
 	var request GetInvoiceRequestObject
 
 	request.InvoiceId = invoiceId
-	request.Params = params
 
 	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
 		return sh.ssi.GetInvoice(ctx, request.(GetInvoiceRequestObject))
@@ -993,10 +851,8 @@ func (sh *strictHandler) GetInvoice(w http.ResponseWriter, r *http.Request, invo
 }
 
 // ListReceipts operation middleware
-func (sh *strictHandler) ListReceipts(w http.ResponseWriter, r *http.Request, params ListReceiptsParams) {
+func (sh *strictHandler) ListReceipts(w http.ResponseWriter, r *http.Request) {
 	var request ListReceiptsRequestObject
-
-	request.Params = params
 
 	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
 		return sh.ssi.ListReceipts(ctx, request.(ListReceiptsRequestObject))
@@ -1019,10 +875,8 @@ func (sh *strictHandler) ListReceipts(w http.ResponseWriter, r *http.Request, pa
 }
 
 // CreateReceipt operation middleware
-func (sh *strictHandler) CreateReceipt(w http.ResponseWriter, r *http.Request, params CreateReceiptParams) {
+func (sh *strictHandler) CreateReceipt(w http.ResponseWriter, r *http.Request) {
 	var request CreateReceiptRequestObject
-
-	request.Params = params
 
 	var body CreateReceiptJSONRequestBody
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -1052,10 +906,17 @@ func (sh *strictHandler) CreateReceipt(w http.ResponseWriter, r *http.Request, p
 }
 
 // ProvisionTenant operation middleware
-func (sh *strictHandler) ProvisionTenant(w http.ResponseWriter, r *http.Request, tenantId openapi_types.UUID) {
+func (sh *strictHandler) ProvisionTenant(w http.ResponseWriter, r *http.Request, params ProvisionTenantParams) {
 	var request ProvisionTenantRequestObject
 
-	request.TenantId = tenantId
+	request.Params = params
+
+	var body ProvisionTenantJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
 
 	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
 		return sh.ssi.ProvisionTenant(ctx, request.(ProvisionTenantRequestObject))

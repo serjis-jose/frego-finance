@@ -104,7 +104,7 @@ func main() {
 	tenantRepo := tenantrepo.New(tenantPool, financePool, cfg.Database.User)
 	tenantService := tenantservice.New(tenantRepo)
 
-	financeHandler := api.NewFinanceHandler(logger, financeService, tenantService, cfg.Storage.MaxUploadSize)
+	financeHandler := api.NewFinanceHandler(logger, financeService, tenantService, cfg.Storage.MaxUploadSize, cfg.InternalSecret)
 	strictServer := api.NewStrictHandler(financeHandler, nil)
 	apiHandler := api.HandlerWithOptions(strictServer, api.ChiServerOptions{
 		BaseURL: "/finance/api/v1",
@@ -136,6 +136,7 @@ func main() {
 			"Content-Type",
 			"X-Requested-With",
 			"X-Tenant-ID",
+			"Secret",
 		},
 		AllowCredentials: true,
 		MaxAge:           300,

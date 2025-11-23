@@ -394,7 +394,7 @@ BEGIN;
       invoice_type             text NOT NULL,                 -- from Excel
       invoice_date             date NOT NULL,
       customer_id              uuid, -- REFERENCES party_master(id) -- External: UUID only (nullable for Finance independence)
-      job_id                   uuid -- REFERENCES ops_job(id) -- External: UUID only,
+      job_id                   uuid, -- REFERENCES ops_job(id) -- External: UUID only
       billing_address          text,
       billing_country          text,
       currency_code            char(3) NOT NULL REFERENCES currency_lu(code),
@@ -402,7 +402,7 @@ BEGIN;
       payment_term_code        text, -- REFERENCES payment_term_lu(code) -- Internal table
       customer_po_number       text,
       customer_po_date         date,
-      sales_executive_id       uuid -- REFERENCES employee_master(id) -- External: UUID only,
+      sales_executive_id       uuid, -- REFERENCES employee_master(id) -- External: UUID only
 
       subtotal_amount          numeric(14,2),                 -- sum of line amount_without_tax
       tax_amount               numeric(14,2),
@@ -618,7 +618,7 @@ BEGIN;
       due_date                    date,
       payment_term_code           text, -- REFERENCES payment_term_lu(code) -- Internal table
       invoice_type                text REFERENCES ap_invoice_category_lu(code),
-      job_id                      uuid -- REFERENCES ops_job(id) -- External: UUID only,
+      job_id                      uuid, -- REFERENCES ops_job(id) -- External: UUID only
       department_cost_center_code text REFERENCES department_cost_center_lu(code),
       cost_head_gl_account_id     uuid REFERENCES gl_account_lu(id),
       asset_category_code         text REFERENCES asset_category_lu(code),
@@ -665,7 +665,7 @@ BEGIN;
       vendor_invoice_id         uuid NOT NULL REFERENCES ap_vendor_invoice(id) ON DELETE CASCADE,
       line_no                   int NOT NULL,
 
-      ops_provision_id          uuid -- REFERENCES ops_provision(id) -- External: UUID only,
+      ops_provision_id          uuid, -- REFERENCES ops_provision(id) -- External: UUID only
       item_description          text NOT NULL,
       quantity                  numeric(14,3),
       unit_price                numeric(14,2),
@@ -748,8 +748,8 @@ BEGIN;
       payment_voucher_no          text NOT NULL UNIQUE,
       payment_date                date NOT NULL,
       payment_type                text NOT NULL REFERENCES ap_invoice_category_lu(code),
-      job_id                      uuid -- REFERENCES ops_job(id) -- External: UUID only,
-      party_id                    uuid -- REFERENCES party_master(id) -- External: UUID only,
+      job_id                      uuid, -- REFERENCES ops_job(id) -- External: UUID only
+      party_id                    uuid, -- REFERENCES party_master(id) -- External: UUID only
       vendor_code_snapshot        text,
       currency_code               char(3) NOT NULL REFERENCES currency_lu(code),
       exchange_rate               numeric(12,6),

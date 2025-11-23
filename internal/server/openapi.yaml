@@ -23,16 +23,6 @@ components:
       scheme: bearer
       bearerFormat: JWT
 
-  parameters:
-    TenantID:
-      name: X-Tenant-ID
-      in: header
-      required: true
-      schema:
-        type: string
-        format: uuid
-      description: Tenant identifier
-
   schemas:
     Error:
       type: object
@@ -131,7 +121,6 @@ paths:
       summary: List invoices
       operationId: listInvoices
       parameters:
-        - $ref: '#/components/parameters/TenantID'
         - name: customer_id
           in: query
           schema:
@@ -173,8 +162,6 @@ paths:
     post:
       summary: Create invoice
       operationId: createInvoice
-      parameters:
-        - $ref: '#/components/parameters/TenantID'
       requestBody:
         required: true
         content:
@@ -200,7 +187,6 @@ paths:
       summary: Get invoice
       operationId: getInvoice
       parameters:
-        - $ref: '#/components/parameters/TenantID'
         - name: invoice_id
           in: path
           required: true
@@ -221,8 +207,6 @@ paths:
     get:
       summary: List receipts
       operationId: listReceipts
-      parameters:
-        - $ref: '#/components/parameters/TenantID'
       responses:
         '200':
           description: List of receipts
@@ -239,8 +223,6 @@ paths:
     post:
       summary: Create receipt
       operationId: createReceipt
-      parameters:
-        - $ref: '#/components/parameters/TenantID'
       requestBody:
         required: true
         content:
@@ -255,25 +237,62 @@ paths:
               schema:
                 $ref: '#/components/schemas/Receipt'
 
-  /tenants/{tenant_id}/provision:
+  /tenants/provision:
     post:
       summary: Provision finance schema for a tenant
       operationId: provisionTenant
-      description: Creates finance schema for the tenant. Schema name is auto-generated as 'finance_{tenant_id}'.
+      description: Creates finance schema for the tenant. Schema name is computed from displayName with 'fin_' prefix, or generated from tenantId if displayName is not provided.
+      security: []
       parameters:
-        - name: tenant_id
-          in: path
+        - name: Secret
+          in: header
           required: true
+          description: Internal secret used for provisioning authorization
           schema:
             type: string
-            format: uuid
-          description: Tenant identifier
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - tenantId
+              properties:
+                tenantId:
+                  type: string
+                  format: uuid
+                  description: Tenant identifier
+                displayName:
+                  type: string
+                  description: Tenant display name (used to compute schema name)
+                actor:
+                  type: string
+                  description: User/actor performing the provisioning
       responses:
         '200':
           description: Tenant provisioned successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  tenantId:
+                    type: string
+                    format: uuid
+                  schemaName:
+                    type: string
         '400':
           description: Bad request
-        '404':
-          description: Tenant not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '500':
           description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
