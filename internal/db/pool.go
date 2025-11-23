@@ -51,25 +51,3 @@ func NewPool(
 
 	return pool, nil
 }
-
-// EnsureFinanceTenantProvisioning ensures the finance tenant provisioning procedure exists
-func EnsureFinanceTenantProvisioning(ctx context.Context, pool *pgxpool.Pool) error {
-	// Check if the procedure exists
-	var exists bool
-	err := pool.QueryRow(ctx, `
-		SELECT EXISTS (
-			SELECT 1 FROM pg_proc 
-			WHERE proname = 'ensure_finance_tenant_schema'
-		)
-	`).Scan(&exists)
-
-	if err != nil {
-		return fmt.Errorf("check procedure existence: %w", err)
-	}
-
-	if !exists {
-		return fmt.Errorf("finance tenant provisioning procedure not found - please run db/provision_tenant.sql")
-	}
-
-	return nil
-}

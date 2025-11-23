@@ -25,6 +25,7 @@ FROM gcr.io/distroless/base-debian12:nonroot
 WORKDIR /app
 
 COPY --from=builder /app/bin/finance-server /usr/local/bin/finance-server
+COPY --from=builder /app/db /app/db
 
 EXPOSE 8080
 
