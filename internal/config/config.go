@@ -30,6 +30,7 @@ type DatabaseConfig struct {
 	MaxIdleConns      int           `env:"MAX_IDLE_CONNS" envDefault:"5"`
 	ConnMaxLifetime   time.Duration `env:"CONN_MAX_LIFETIME" envDefault:"5m"`
 	PreferSimpleProto bool          `env:"PREFER_SIMPLE_PROTO" envDefault:"false"`
+	User              string        `env:"USER" envDefault:"erp_user"`
 }
 
 type SecurityConfig struct {

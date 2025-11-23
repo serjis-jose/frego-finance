@@ -1,7 +1,8 @@
 BEGIN;
   CREATE OR REPLACE PROCEDURE ensure_finance_tenant_schema(
     p_tenant_id uuid DEFAULT NULL,
-    p_schema text DEFAULT NULL
+    p_schema text DEFAULT NULL,
+    p_grant_role text DEFAULT 'erp_user'
   )
   LANGUAGE plpgsql
   AS $$
@@ -11,6 +12,7 @@ BEGIN;
     schema_input   text := NULLIF(trim(both from p_schema), '');
     tenant_schema  text;
     v_actor        text := COALESCE(NULLIF(current_setting('app.actor', true), ''), session_user::text);
+    v_grant_role   text := COALESCE(NULLIF(trim(both from p_grant_role), ''), 'erp_user');
   BEGIN
     IF tenant_uuid IS NULL THEN
       RAISE EXCEPTION 'Tenant identifier must be provided.';
@@ -848,10 +850,10 @@ BEGIN;
 
     $ddl$, tenant_schema);
 
-    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'erp_user') THEN
-      EXECUTE format('GRANT USAGE ON SCHEMA %I TO erp_user', tenant_schema);
-      EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA %I TO erp_user', tenant_schema);
-      EXECUTE format('GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA %I TO erp_user', tenant_schema);
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = v_grant_role) THEN
+      EXECUTE format('GRANT USAGE ON SCHEMA %I TO %I', tenant_schema, v_grant_role);
+      EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA %I TO %I', tenant_schema, v_grant_role);
+      EXECUTE format('GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA %I TO %I', tenant_schema, v_grant_role);
     END IF;
 
     COMMIT;

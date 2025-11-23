@@ -21,6 +21,7 @@ import (
 	tenantservice "frego-finance/internal/service/tenant"
 	"frego-finance/internal/storage"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/cors"
 )
 
@@ -100,7 +101,7 @@ func main() {
 	financeRepo := financerepo.NewWithSessions(tenantSessions)
 	financeService := financeservice.New(financeRepo, documentUploader)
 
-	tenantRepo := tenantrepo.New(tenantPool, financePool)
+	tenantRepo := tenantrepo.New(tenantPool, financePool, cfg.Database.User)
 	tenantService := tenantservice.New(tenantRepo)
 
 	financeHandler := api.NewFinanceHandler(logger, financeService, tenantService, cfg.Storage.MaxUploadSize)
@@ -111,6 +112,11 @@ func main() {
 			logging.InjectMiddleware(logger),
 		},
 	})
+
+	// Tenant provisioning handler (for backend-to-finance communication)
+	tenantHandler := api.NewTenantHandler(logger, tenantService)
+	tenantRouter := chi.NewRouter()
+	tenantHandler.RegisterRoutes(tenantRouter)
 
 	corsOrigins := append([]string{}, cfg.Security.AllowedOrigins...)
 	corsOrigins = append(corsOrigins, "https://dev.myfrego.com", "http://localhost:3000")
@@ -138,6 +144,7 @@ func main() {
 	router := server.BuildRouter(
 		logger,
 		apiHandler,
+		tenantRouter,
 		corsMiddleware,
 		auth.Middleware(logger, authenticator),
 		server.TenantMiddleware(logger, tenantPool, cfg.Security.DefaultTenant),

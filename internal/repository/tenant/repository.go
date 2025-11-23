@@ -14,13 +14,15 @@ import (
 type Repository struct {
 	tenantPool  *pgxpool.Pool
 	financePool *pgxpool.Pool
+	dbUser      string
 }
 
 // New creates a new tenant repository
-func New(tenantPool, financePool *pgxpool.Pool) *Repository {
+func New(tenantPool, financePool *pgxpool.Pool, dbUser string) *Repository {
 	return &Repository{
 		tenantPool:  tenantPool,
 		financePool: financePool,
+		dbUser:      dbUser,
 	}
 }
 
@@ -45,8 +47,8 @@ func (r *Repository) ProvisionTenant(ctx context.Context, tenantID uuid.UUID, sc
 
 	// 2. Provision schema in finance DB
 	_, err := r.financePool.Exec(ctx, `
-		CALL ensure_finance_tenant_schema($1, $2)
-	`, tenantID, schemaName)
+		CALL ensure_finance_tenant_schema($1, $2, $3)
+	`, tenantID, schemaName, r.dbUser)
 	if err != nil {
 		// Update audit log to failed
 		_, _ = r.tenantPool.Exec(ctx, `

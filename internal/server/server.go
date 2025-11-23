@@ -69,6 +69,7 @@ func (s *Server) Shutdown(ctx context.Context) error {
 func BuildRouter(
 	logger *slog.Logger,
 	apiHandler http.Handler,
+	tenantHandler http.Handler,
 	corsMiddleware func(http.Handler) http.Handler,
 	authMiddleware func(http.Handler) http.Handler,
 	tenantMiddleware func(http.Handler) http.Handler,
@@ -86,6 +87,11 @@ func BuildRouter(
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("OK"))
 	})
+
+	// Internal tenant provisioning routes (no auth required - for backend-to-finance calls)
+	if tenantHandler != nil {
+		r.Mount("/", tenantHandler)
+	}
 
 	// API routes with auth and tenant middleware
 	r.Group(func(r chi.Router) {
