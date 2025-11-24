@@ -82,8 +82,8 @@ LIMIT $3 OFFSET $4;
 
 -- name: CreateJournalEntry :one
 INSERT INTO journal_entry_header (
-  journal_no,
-  journal_date,
+  je_number,
+  je_date,
   description,
   source_module,
   source_document_type,
@@ -101,7 +101,7 @@ RETURNING *;
 
 -- name: CreateJournalLine :one
 INSERT INTO journal_entry_lines (
-  header_id,
+  je_id,
   line_no,
   gl_account_id,
   party_id,
@@ -118,10 +118,10 @@ RETURNING *;
 
 -- name: PostJournalToGL :exec
 INSERT INTO general_ledger (
-  journal_line_id,
-  journal_header_id,
+  je_line_id,
+  je_id,
   journal_no,
-  journal_date,
+  posting_date,
   journal_description,
   source_module,
   source_document_type,
@@ -147,10 +147,10 @@ INSERT INTO general_ledger (
   posted_by
 )
 SELECT 
-  jl.id,
-  jh.id,
-  jh.journal_no,
-  jh.journal_date,
+  jl.je_line_id,
+  jh.je_id,
+  jh.je_number,
+  jh.je_date,
   jh.description,
   jh.source_module,
   jh.source_document_type,
@@ -175,7 +175,7 @@ SELECT
   now(),
   $2
 FROM journal_entry_lines jl
-JOIN journal_entry_header jh ON jl.header_id = jh.id
+JOIN journal_entry_header jh ON jl.je_id = jh.je_id
 JOIN gl_account_lu gl ON jl.gl_account_id = gl.id
 LEFT JOIN gl_account_group_lu grp ON gl.account_group_id = grp.id
-WHERE jh.id = $1;
+WHERE jh.je_id = $1;
