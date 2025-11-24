@@ -256,7 +256,19 @@ CREATE TABLE IF NOT EXISTS journal_entry_header (
   created_by             text,
   modified_at            timestamptz,
   modified_by            text,
-  is_active              boolean DEFAULT true
+  is_active              boolean DEFAULT true,
+  
+  -- Validation constraints
+  CONSTRAINT chk_journal_totals_balance CHECK (
+    (total_debit IS NULL AND total_credit IS NULL) OR 
+    (total_debit = total_credit)
+  ),
+  CONSTRAINT chk_journal_debit_non_negative CHECK (total_debit IS NULL OR total_debit >= 0),
+  CONSTRAINT chk_journal_credit_non_negative CHECK (total_credit IS NULL OR total_credit >= 0),
+  CONSTRAINT chk_journal_totals_non_zero CHECK (
+    (total_debit IS NULL AND total_credit IS NULL) OR 
+    (total_debit > 0 AND total_credit > 0)
+  )
 );
 
 CREATE INDEX IF NOT EXISTS idx_journal_header_date
@@ -282,7 +294,15 @@ CREATE TABLE IF NOT EXISTS journal_entry_lines (
   modified_by      text,
   is_active        boolean DEFAULT true,
 
-  UNIQUE (header_id, line_no)
+  UNIQUE (header_id, line_no),
+  
+  -- Validation constraints
+  CONSTRAINT chk_line_debit_non_negative CHECK (debit_amount >= 0),
+  CONSTRAINT chk_line_credit_non_negative CHECK (credit_amount >= 0),
+  CONSTRAINT chk_line_amounts_valid CHECK (
+    (debit_amount > 0 AND credit_amount = 0) OR 
+    (debit_amount = 0 AND credit_amount > 0)
+  )
 );
 
 CREATE INDEX IF NOT EXISTS idx_journal_lines_header
@@ -296,6 +316,135 @@ CREATE INDEX IF NOT EXISTS idx_journal_lines_party
 
 CREATE INDEX IF NOT EXISTS idx_journal_lines_job
   ON journal_entry_lines(job_id);
+
+-- ============================================================
+--  JOURNAL ENTRY VALIDATION TRIGGERS
+-- ============================================================
+
+-- Trigger to prevent modifications to journal entry header after POSTED
+CREATE OR REPLACE FUNCTION trg_prevent_je_modification_after_posted()
+RETURNS trigger AS $$
+BEGIN
+  -- Prevent any updates if status is 'POSTED'
+  IF OLD.status = 'POSTED' THEN
+    RAISE EXCEPTION 'Cannot modify journal entry after it has been POSTED. Journal No: %', OLD.journal_no;
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_journal_entry_header_prevent_posted_modification ON journal_entry_header;
+CREATE TRIGGER trg_journal_entry_header_prevent_posted_modification
+BEFORE UPDATE ON journal_entry_header
+FOR EACH ROW EXECUTE FUNCTION trg_prevent_je_modification_after_posted();
+
+-- Trigger to prevent modifications to journal entry lines when header is POSTED
+CREATE OR REPLACE FUNCTION trg_prevent_je_lines_modification_after_posted()
+RETURNS trigger AS $$
+DECLARE
+  v_status text;
+BEGIN
+  SELECT status INTO v_status
+  FROM journal_entry_header
+  WHERE id = COALESCE(NEW.header_id, OLD.header_id);
+  
+  IF v_status = 'POSTED' THEN
+    RAISE EXCEPTION 'Cannot modify journal entry lines after journal entry has been POSTED';
+  END IF;
+  RETURN COALESCE(NEW, OLD);
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_journal_entry_lines_prevent_posted_modification ON journal_entry_lines;
+CREATE TRIGGER trg_journal_entry_lines_prevent_posted_modification
+BEFORE INSERT OR UPDATE OR DELETE ON journal_entry_lines
+FOR EACH ROW EXECUTE FUNCTION trg_prevent_je_lines_modification_after_posted();
+
+-- Trigger to validate header totals match sum of line totals (when header is updated)
+CREATE OR REPLACE FUNCTION trg_validate_journal_header_totals()
+RETURNS trigger AS $$
+DECLARE
+  v_sum_debit  numeric(14,2);
+  v_sum_credit numeric(14,2);
+BEGIN
+  -- Only validate if totals are being set (not NULL)
+  IF NEW.total_debit IS NOT NULL AND NEW.total_credit IS NOT NULL THEN
+    -- Calculate sum of line totals
+    SELECT 
+      COALESCE(SUM(debit_amount), 0),
+      COALESCE(SUM(credit_amount), 0)
+    INTO v_sum_debit, v_sum_credit
+    FROM journal_entry_lines
+    WHERE header_id = NEW.id
+      AND is_active = true;
+    
+    -- Validate: Header total_debit = SUM of line debits
+    IF NEW.total_debit != v_sum_debit THEN
+      RAISE EXCEPTION 'Header total_debit (%) must equal SUM of line debits (%)', NEW.total_debit, v_sum_debit;
+    END IF;
+    
+    -- Validate: Header total_credit = SUM of line credits
+    IF NEW.total_credit != v_sum_credit THEN
+      RAISE EXCEPTION 'Header total_credit (%) must equal SUM of line credits (%)', NEW.total_credit, v_sum_credit;
+    END IF;
+  END IF;
+  
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_journal_entry_header_validate_totals ON journal_entry_header;
+CREATE TRIGGER trg_journal_entry_header_validate_totals
+BEFORE UPDATE ON journal_entry_header
+FOR EACH ROW EXECUTE FUNCTION trg_validate_journal_header_totals();
+
+-- Trigger to validate header totals match sum of line totals (when lines are modified)
+CREATE OR REPLACE FUNCTION trg_validate_journal_lines_totals()
+RETURNS trigger AS $$
+DECLARE
+  v_sum_debit  numeric(14,2);
+  v_sum_credit numeric(14,2);
+  v_header_debit numeric(14,2);
+  v_header_credit numeric(14,2);
+  v_header_id uuid;
+BEGIN
+  v_header_id := COALESCE(NEW.header_id, OLD.header_id);
+  
+  -- Get the header totals
+  SELECT total_debit, total_credit INTO v_header_debit, v_header_credit
+  FROM journal_entry_header
+  WHERE id = v_header_id;
+  
+  -- Only validate if header totals are set
+  IF v_header_debit IS NOT NULL AND v_header_credit IS NOT NULL THEN
+    -- Calculate sum of line totals
+    SELECT 
+      COALESCE(SUM(debit_amount), 0),
+      COALESCE(SUM(credit_amount), 0)
+    INTO v_sum_debit, v_sum_credit
+    FROM journal_entry_lines
+    WHERE header_id = v_header_id
+      AND is_active = true;
+    
+    -- Validate: Header total_debit = SUM of line debits
+    IF v_header_debit != v_sum_debit THEN
+      RAISE EXCEPTION 'Header total_debit (%) must equal SUM of line debits (%)', v_header_debit, v_sum_debit;
+    END IF;
+    
+    -- Validate: Header total_credit = SUM of line credits
+    IF v_header_credit != v_sum_credit THEN
+      RAISE EXCEPTION 'Header total_credit (%) must equal SUM of line credits (%)', v_header_credit, v_sum_credit;
+    END IF;
+  END IF;
+  
+  RETURN COALESCE(NEW, OLD);
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_journal_entry_lines_validate_totals ON journal_entry_lines;
+CREATE TRIGGER trg_journal_entry_lines_validate_totals
+AFTER INSERT OR UPDATE OR DELETE ON journal_entry_lines
+FOR EACH ROW EXECUTE FUNCTION trg_validate_journal_lines_totals();
 
 -- Final general ledger postings (populated when documents are posted)
 CREATE TABLE IF NOT EXISTS general_ledger (
