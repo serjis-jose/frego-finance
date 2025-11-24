@@ -278,55 +278,82 @@ BEGIN;
     -- ============================================================
 
     CREATE TABLE IF NOT EXISTS journal_entry_header (
-      id                     uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
-      journal_no             text NOT NULL UNIQUE,
-      journal_date           date NOT NULL,
+      je_id                  uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+      je_number              text NOT NULL UNIQUE,
+      je_date                date NOT NULL,
+      document_date          date,            -- Actual document date (invoice date / payment date)
       description            text,
-      source_module          text,           -- 'AR','AP','MANUAL',...
-      source_document_type   text,           -- 'AR_INVOICE','AP_PAYMENT',...
-      source_document_id     uuid,           -- FK not enforced (can point to any header)
+      source_module          text,            -- Module that created this entry (AR_INVOICE / AP_PAYMENT / JV etc.)
+      source_document_type   text,            -- 'AR_INVOICE','AP_PAYMENT',...
+      source_document_id     uuid,            -- FK not enforced (can point to any header)
+      source_id              uuid,            -- Document's primary key (invoice_id, payment_id, etc.)
       currency_code          char(3) REFERENCES currency_lu(code),
       exchange_rate          numeric(12,6),
       total_debit            numeric(14,2),
       total_credit           numeric(14,2),
-      status                 text,           -- journal posting status (not approval)
+      status                 text,            -- CREATED (JE generated) / POSTED (GL entries created) / ERROR
       posted_at              timestamptz,
       posted_by              text,
       created_at             timestamptz DEFAULT now(),
       created_by             text,
       modified_at            timestamptz,
       modified_by            text,
-      is_active              boolean DEFAULT true
+      is_active              boolean DEFAULT true,
+      
+      -- Validation constraints
+      CONSTRAINT chk_journal_totals_balance CHECK (
+        (total_debit IS NULL AND total_credit IS NULL) OR 
+        (total_debit = total_credit)
+      ),
+      CONSTRAINT chk_journal_debit_non_negative CHECK (total_debit IS NULL OR total_debit >= 0),
+      CONSTRAINT chk_journal_credit_non_negative CHECK (total_credit IS NULL OR total_credit >= 0),
+      CONSTRAINT chk_journal_totals_non_zero CHECK (
+        (total_debit IS NULL AND total_credit IS NULL) OR 
+        (total_debit > 0 AND total_credit > 0)
+      )
     );
 
     CREATE INDEX IF NOT EXISTS idx_journal_header_date
-      ON journal_entry_header(journal_date);
+      ON journal_entry_header(je_date);
 
     CREATE INDEX IF NOT EXISTS idx_journal_header_source
       ON journal_entry_header(source_module, source_document_type, source_document_id);
 
     CREATE TABLE IF NOT EXISTS journal_entry_lines (
-      id               uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
-      header_id        uuid NOT NULL REFERENCES journal_entry_header(id) ON DELETE CASCADE,
-      line_no          int NOT NULL,
-      gl_account_id    uuid NOT NULL REFERENCES gl_account_lu(id),
-      party_id         uuid, -- REFERENCES party_master(id) -- External: UUID only (customer/vendor)
-      job_id           uuid, -- REFERENCES ops_job(id) -- External: UUID only
-      branch_id        uuid, -- REFERENCES branch_lu(branch_id) -- External: UUID only
-      debit_amount     numeric(14,2) DEFAULT 0,
-      credit_amount    numeric(14,2) DEFAULT 0,
-      narration        text,
-      created_at       timestamptz DEFAULT now(),
-      created_by       text,
-      modified_at      timestamptz,
-      modified_by      text,
-      is_active        boolean DEFAULT true,
+      je_line_id         uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+      je_id              uuid NOT NULL REFERENCES journal_entry_header(je_id) ON DELETE CASCADE,
+      line_no            int NOT NULL,
+      gl_account_id      uuid NOT NULL REFERENCES gl_account_lu(id),
+      gl_account_code    text,            -- Which GL account to debit/credit
+      cost_center_code   text,            -- Optional cost center / department
+      party_id           uuid,            -- REFERENCES party_master(id) -- External: UUID only (customer/vendor)
+      vendor_id          uuid,            -- Used for AP transactions
+      customer_id        uuid,            -- Used for AR transactions
+      job_id             uuid,            -- REFERENCES ops_job(id) -- External: UUID only
+      job_no             text,            -- Optional job number for job-based postings
+      branch_id          uuid,            -- REFERENCES branch_lu(branch_id) -- External: UUID only
+      debit_amount       numeric(14,2) DEFAULT 0,
+      credit_amount      numeric(14,2) DEFAULT 0,
+      narration          text,
+      created_at         timestamptz DEFAULT now(),
+      created_by         text,
+      modified_at        timestamptz,
+      modified_by        text,
+      is_active          boolean DEFAULT true,
 
-      UNIQUE (header_id, line_no)
+      UNIQUE (je_id, line_no),
+      
+      -- Validation constraints
+      CONSTRAINT chk_line_debit_non_negative CHECK (debit_amount >= 0),
+      CONSTRAINT chk_line_credit_non_negative CHECK (credit_amount >= 0),
+      CONSTRAINT chk_line_amounts_valid CHECK (
+        (debit_amount > 0 AND credit_amount = 0) OR 
+        (debit_amount = 0 AND credit_amount > 0)
+      )
     );
 
     CREATE INDEX IF NOT EXISTS idx_journal_lines_header
-      ON journal_entry_lines(header_id);
+      ON journal_entry_lines(je_id);
 
     CREATE INDEX IF NOT EXISTS idx_journal_lines_gl_account
       ON journal_entry_lines(gl_account_id);
@@ -339,49 +366,185 @@ BEGIN;
 
     -- Final general ledger postings (populated when documents are posted)
     CREATE TABLE IF NOT EXISTS general_ledger (
-      entry_id               uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
-      journal_line_id        uuid,
-      journal_header_id      uuid,
+      gl_entry_id            uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+      je_line_id             uuid,            -- Reference to JE Line
+      je_id                  uuid,            -- Reference to JE Header
       journal_no             text,
       journal_date           date,
+      posting_date           date,            -- Ledger posting date (same as JE date)
       journal_description    text,
-      source_module          text,
+      source_module          text,            -- AR_INVOICE / AP_INVOICE / etc.
       source_document_type   text,
       source_document_id     uuid,
-      currency_code          char(3),
-      exchange_rate          numeric(12,6),
+      source_id              uuid,            -- The document ID from source module
+      currency_code          char(3),         -- Original transaction currency
+      exchange_rate          numeric(12,6),   -- FX rate used
       journal_status         text,
       line_no                int,
       gl_account_id          uuid REFERENCES gl_account_lu(id),
-      gl_account_code        text,
+      gl_account_code        text,            -- GL account code
       gl_account_name        text,
       account_group_id       smallint,
       account_group_code     text,
       account_group_name     text,
+      cost_center_code       text,            -- Optional cost center
       party_id               uuid,
+      vendor_id              uuid,            -- Vendor reference (for AP reporting)
+      customer_id            uuid,            -- Customer reference (for AR reporting)
       job_id                 uuid,
+      job_no                 text,            -- Optional job no (if job related)
       branch_id              uuid,
-      debit_amount           numeric(14,2) DEFAULT 0,
-      credit_amount          numeric(14,2) DEFAULT 0,
+      debit_amount           numeric(14,2) DEFAULT 0, -- Debit amount in base currency
+      credit_amount          numeric(14,2) DEFAULT 0, -- Credit amount in base currency
+      amount_base            numeric(14,2),   -- Amount converted into base currency
       line_narration         text,
-      created_at             timestamptz DEFAULT now(),
+      created_at             timestamptz DEFAULT now(), -- Timestamp when GL row was actually inserted
       created_by             text,
-      posted_at              timestamptz,
-      posted_by              text,
+      posted_at              timestamptz,     -- Same as created_at (but kept separately for audit)
+      posted_by              text,            -- User/system who performed posting
       is_active              boolean DEFAULT true
     );
 
     CREATE UNIQUE INDEX IF NOT EXISTS idx_general_ledger_line_id
-      ON general_ledger(journal_line_id);
+      ON general_ledger(je_line_id);
 
     CREATE INDEX IF NOT EXISTS idx_general_ledger_account
-      ON general_ledger(gl_account_id, journal_date);
+      ON general_ledger(gl_account_id, posting_date);
 
     CREATE INDEX IF NOT EXISTS idx_general_ledger_party
-      ON general_ledger(party_id, journal_date);
+      ON general_ledger(party_id, posting_date);
 
     CREATE INDEX IF NOT EXISTS idx_general_ledger_group
-      ON general_ledger(account_group_code, journal_date);
+      ON general_ledger(account_group_code, posting_date);
+
+    -- ============================================================
+    --  JOURNAL ENTRY VALIDATION TRIGGERS
+    -- ============================================================
+
+    -- Trigger to prevent modifications to journal entry header after POSTED
+    CREATE OR REPLACE FUNCTION trg_prevent_je_modification_after_posted()
+    RETURNS trigger AS $$
+    BEGIN
+      -- Prevent any updates if status is 'POSTED'
+      IF OLD.status = 'POSTED' THEN
+        RAISE EXCEPTION 'Cannot modify journal entry after it has been POSTED. Journal No: %', OLD.je_number;
+      END IF;
+      RETURN NEW;
+    END;
+    $$ LANGUAGE plpgsql;
+
+    DROP TRIGGER IF EXISTS trg_journal_entry_header_prevent_posted_modification ON journal_entry_header;
+    CREATE TRIGGER trg_journal_entry_header_prevent_posted_modification
+    BEFORE UPDATE ON journal_entry_header
+    FOR EACH ROW EXECUTE FUNCTION trg_prevent_je_modification_after_posted();
+
+    -- Trigger to prevent modifications to journal entry lines when header is POSTED
+    CREATE OR REPLACE FUNCTION trg_prevent_je_lines_modification_after_posted()
+    RETURNS trigger AS $$
+    DECLARE
+      v_status text;
+    BEGIN
+      SELECT status INTO v_status
+      FROM journal_entry_header
+      WHERE je_id = COALESCE(NEW.je_id, OLD.je_id);
+      
+      IF v_status = 'POSTED' THEN
+        RAISE EXCEPTION 'Cannot modify journal entry lines after journal entry has been POSTED';
+      END IF;
+      RETURN COALESCE(NEW, OLD);
+    END;
+    $$ LANGUAGE plpgsql;
+
+    DROP TRIGGER IF EXISTS trg_journal_entry_lines_prevent_posted_modification ON journal_entry_lines;
+    CREATE TRIGGER trg_journal_entry_lines_prevent_posted_modification
+    BEFORE INSERT OR UPDATE OR DELETE ON journal_entry_lines
+    FOR EACH ROW EXECUTE FUNCTION trg_prevent_je_lines_modification_after_posted();
+
+    -- Trigger to validate header totals match sum of line totals (when header is updated)
+    CREATE OR REPLACE FUNCTION trg_validate_journal_header_totals()
+    RETURNS trigger AS $$
+    DECLARE
+      v_sum_debit  numeric(14,2);
+      v_sum_credit numeric(14,2);
+    BEGIN
+      -- Only validate if totals are being set (not NULL)
+      IF NEW.total_debit IS NOT NULL AND NEW.total_credit IS NOT NULL THEN
+        -- Calculate sum of line totals
+        SELECT 
+          COALESCE(SUM(debit_amount), 0),
+          COALESCE(SUM(credit_amount), 0)
+        INTO v_sum_debit, v_sum_credit
+        FROM journal_entry_lines
+        WHERE je_id = NEW.je_id
+          AND is_active = true;
+        
+        -- Validate: Header total_debit = SUM of line debits
+        IF NEW.total_debit != v_sum_debit THEN
+          RAISE EXCEPTION 'Header total_debit (%) must equal SUM of line debits (%)', NEW.total_debit, v_sum_debit;
+        END IF;
+        
+        -- Validate: Header total_credit = SUM of line credits
+        IF NEW.total_credit != v_sum_credit THEN
+          RAISE EXCEPTION 'Header total_credit (%) must equal SUM of line credits (%)', NEW.total_credit, v_sum_credit;
+        END IF;
+      END IF;
+      
+      RETURN NEW;
+    END;
+    $$ LANGUAGE plpgsql;
+
+    DROP TRIGGER IF EXISTS trg_journal_entry_header_validate_totals ON journal_entry_header;
+    CREATE TRIGGER trg_journal_entry_header_validate_totals
+    BEFORE UPDATE ON journal_entry_header
+    FOR EACH ROW EXECUTE FUNCTION trg_validate_journal_header_totals();
+
+    -- Trigger to validate header totals match sum of line totals (when lines are modified)
+    CREATE OR REPLACE FUNCTION trg_validate_journal_lines_totals()
+    RETURNS trigger AS $$
+    DECLARE
+      v_sum_debit  numeric(14,2);
+      v_sum_credit numeric(14,2);
+      v_header_debit numeric(14,2);
+      v_header_credit numeric(14,2);
+      v_je_id uuid;
+    BEGIN
+      v_je_id := COALESCE(NEW.je_id, OLD.je_id);
+      
+      -- Get the header totals
+      SELECT total_debit, total_credit INTO v_header_debit, v_header_credit
+      FROM journal_entry_header
+      WHERE je_id = v_je_id;
+      
+      -- Only validate if header totals are set
+      IF v_header_debit IS NOT NULL AND v_header_credit IS NOT NULL THEN
+        -- Calculate sum of line totals
+        SELECT 
+          COALESCE(SUM(debit_amount), 0),
+          COALESCE(SUM(credit_amount), 0)
+        INTO v_sum_debit, v_sum_credit
+        FROM journal_entry_lines
+        WHERE je_id = v_je_id
+          AND is_active = true;
+        
+        -- Validate: Header total_debit = SUM of line debits
+        IF v_header_debit != v_sum_debit THEN
+          RAISE EXCEPTION 'Header total_debit (%) must equal SUM of line debits (%)', v_header_debit, v_sum_debit;
+        END IF;
+        
+        -- Validate: Header total_credit = SUM of line credits
+        IF v_header_credit != v_sum_credit THEN
+          RAISE EXCEPTION 'Header total_credit (%) must equal SUM of line credits (%)', v_header_credit, v_sum_credit;
+        END IF;
+      END IF;
+      
+      RETURN COALESCE(NEW, OLD);
+    END;
+    $$ LANGUAGE plpgsql;
+
+    DROP TRIGGER IF EXISTS trg_journal_entry_lines_validate_totals ON journal_entry_lines;
+    CREATE TRIGGER trg_journal_entry_lines_validate_totals
+    AFTER INSERT OR UPDATE OR DELETE ON journal_entry_lines
+    FOR EACH ROW EXECUTE FUNCTION trg_validate_journal_lines_totals();
 
     -- ============================================================
     --  AR INVOICE (HEADER)
