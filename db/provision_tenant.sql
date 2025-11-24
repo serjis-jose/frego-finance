@@ -1,4 +1,23 @@
 BEGIN;
+  -- ============================================================
+  --  FINANCE TENANT SCHEMA PROVISIONING
+  -- ============================================================
+  -- 
+  -- DESIGN PRINCIPLE: Finance module can operate standalone
+  -- 
+  -- External References (Backend Tables):
+  --   - All references to backend tables (party_master, ops_job, employee_master, branch_lu)
+  --     are stored as UUID fields WITHOUT foreign key constraints
+  --   - This allows finance to work independently even if backend tables don't exist
+  --   - UUID values can be inserted/used without validation against backend tables
+  --   - Comments indicate which backend table each UUID references
+  -- 
+  -- Internal References (Finance Tables):
+  --   - References within finance module (e.g., ar_invoice, gl_account_lu)
+  --     use proper foreign key constraints for data integrity
+  -- 
+  -- ============================================================
+
   CREATE OR REPLACE PROCEDURE ensure_finance_tenant_schema(
     p_tenant_id uuid DEFAULT NULL,
     p_schema text DEFAULT NULL,
@@ -375,10 +394,14 @@ BEGIN;
       gl_account_code    text,            -- Which GL account to debit/credit
       cost_center_code   text,            -- Optional cost center / department
       party_id           uuid,            -- REFERENCES party_master(id) -- External: UUID only (customer/vendor)
+      party_name         text,            -- Snapshot: party_master.name (for standalone display)
       vendor_id          uuid,            -- Used for AP transactions
+      vendor_name        text,            -- Snapshot: party_master.name (for standalone display)
       customer_id        uuid,            -- Used for AR transactions
+      customer_name      text,            -- Snapshot: party_master.name (for standalone display)
       job_id             uuid,            -- REFERENCES ops_job(id) -- External: UUID only
       job_no             text,            -- Optional job number for job-based postings
+      job_code           text,            -- Snapshot: ops_job.job_code (for standalone display)
       branch_id          uuid,            -- REFERENCES branch_lu(branch_id) -- External: UUID only
       debit_amount       numeric(14,2) DEFAULT 0,
       credit_amount      numeric(14,2) DEFAULT 0,
@@ -437,10 +460,14 @@ BEGIN;
       account_group_name     text,
       cost_center_code       text,            -- Optional cost center
       party_id               uuid,
+      party_name             text,            -- Snapshot: party_master.name (for standalone display)
       vendor_id              uuid,            -- Vendor reference (for AP reporting)
+      vendor_name            text,            -- Snapshot: party_master.name (for standalone display)
       customer_id            uuid,            -- Customer reference (for AR reporting)
+      customer_name          text,            -- Snapshot: party_master.name (for standalone display)
       job_id                 uuid,
       job_no                 text,            -- Optional job no (if job related)
+      job_code               text,            -- Snapshot: ops_job.job_code (for standalone display)
       branch_id              uuid,
       debit_amount           numeric(14,2) DEFAULT 0, -- Debit amount in base currency
       credit_amount          numeric(14,2) DEFAULT 0, -- Credit amount in base currency
@@ -605,7 +632,9 @@ BEGIN;
       invoice_type             text NOT NULL REFERENCES invoice_type_lu(code),
       invoice_date             date NOT NULL,
       customer_id              uuid, -- REFERENCES party_master(id) -- External: UUID only (nullable for Finance independence)
+      customer_name            text, -- Snapshot: party_master.name (for standalone display)
       job_id                   uuid, -- REFERENCES ops_job(id) -- External: UUID only
+      job_code                 text, -- Snapshot: ops_job.job_code (for standalone display)
       billing_address          text,
       billing_country          char(3) REFERENCES country_lu(country_code),
       currency_code            char(3) NOT NULL REFERENCES currency_lu(code),
@@ -614,6 +643,7 @@ BEGIN;
       customer_po_number       text,
       customer_po_date         date,
       sales_executive_id       uuid, -- REFERENCES employee_master(id) -- External: UUID only
+      sales_executive_name     text, -- Snapshot: employee_master.name (for standalone display)
 
       subtotal_amount          numeric(14,2),                 -- sum of line amount_without_tax
       tax_amount               numeric(14,2),
@@ -699,6 +729,7 @@ BEGIN;
       receipt_type                text NOT NULL REFERENCES receipt_type_lu(code),
       receipt_date                date NOT NULL,
       customer_id                 uuid, -- REFERENCES party_master(id) -- External: UUID only (nullable for Finance independence)
+      customer_name               text, -- Snapshot: party_master.name (for standalone display)
       currency_code               char(3) NOT NULL REFERENCES currency_lu(code),
       exchange_rate               numeric(12,6),
       payment_mode_id             smallint REFERENCES payment_method_lu(id),
@@ -783,6 +814,7 @@ BEGIN;
       credit_note_no                text NOT NULL UNIQUE,
       credit_note_date              date NOT NULL,
       customer_id                   uuid, -- REFERENCES party_master(id) -- External: UUID only (nullable for Finance independence)
+      customer_name                 text, -- Snapshot: party_master.name (for standalone display)
       invoice_id                    uuid REFERENCES ar_invoice(id),
       currency_code                 char(3) NOT NULL REFERENCES currency_lu(code),
       exchange_rate                 numeric(12,6),
@@ -826,11 +858,13 @@ BEGIN;
       vendor_invoice_no           text NOT NULL,                 -- vendor''s invoice number
       system_invoice_no           text NOT NULL UNIQUE,          -- internal number
       vendor_id                   uuid, -- REFERENCES party_master(id) -- External: UUID only (nullable for Finance independence)
+      vendor_name                  text, -- Snapshot: party_master.name (for standalone display)
       invoice_date                date NOT NULL,
       due_date                    date,
       payment_term_code           text, -- REFERENCES payment_term_lu(code) -- Internal table
       invoice_type                text REFERENCES ap_invoice_category_lu(code),
       job_id                      uuid, -- REFERENCES ops_job(id) -- External: UUID only
+      job_code                    text, -- Snapshot: ops_job.job_code (for standalone display)
       department_cost_center_code text REFERENCES department_cost_center_lu(code),
       cost_head_gl_account_id     uuid REFERENCES gl_account_lu(id),
       asset_category_code         text REFERENCES asset_category_lu(code),
@@ -911,6 +945,7 @@ BEGIN;
       payment_voucher_no          text NOT NULL UNIQUE,
       payment_date                date NOT NULL,
       vendor_id                   uuid, -- REFERENCES party_master(id) -- External: UUID only (nullable for Finance independence)
+      vendor_name                 text, -- Snapshot: party_master.name (for standalone display)
       payment_type                text NOT NULL REFERENCES ap_payment_application_type_lu(code),
       vendor_invoice_id           uuid REFERENCES ap_vendor_invoice(id),
       invoice_type                text REFERENCES ap_invoice_category_lu(code),
@@ -961,7 +996,9 @@ BEGIN;
       payment_date                date NOT NULL,
       payment_type                text NOT NULL REFERENCES ap_invoice_category_lu(code),
       job_id                      uuid, -- REFERENCES ops_job(id) -- External: UUID only
+      job_code                    text, -- Snapshot: ops_job.job_code (for standalone display)
       party_id                    uuid, -- REFERENCES party_master(id) -- External: UUID only
+      party_name                  text, -- Snapshot: party_master.name (for standalone display)
       vendor_code_snapshot        text,
       currency_code               char(3) NOT NULL REFERENCES currency_lu(code),
       exchange_rate               numeric(12,6),
@@ -1015,6 +1052,7 @@ BEGIN;
       debit_note_no               text NOT NULL UNIQUE,
       debit_note_date             date NOT NULL,
       vendor_id                   uuid, -- REFERENCES party_master(id) -- External: UUID only (nullable for Finance independence)
+      vendor_name                 text, -- Snapshot: party_master.name (for standalone display)
       vendor_invoice_id           uuid REFERENCES ap_vendor_invoice(id),
       currency_code               char(3) NOT NULL REFERENCES currency_lu(code),
       exchange_rate               numeric(12,6),
