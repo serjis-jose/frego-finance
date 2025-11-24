@@ -224,11 +224,60 @@ CREATE TABLE IF NOT EXISTS ap_debit_note_reason_lu (
   modified_by text
 );
 
+-- Item master (for invoice lines)
+CREATE TABLE IF NOT EXISTS item_master (
+  id              uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  item_code       text NOT NULL UNIQUE,
+  item_description text NOT NULL,
+  unit_of_measure text,
+  is_active       boolean DEFAULT true,
+  created_at      timestamptz DEFAULT now(),
+  created_by      text,
+  modified_at     timestamptz,
+  modified_by     text
+);
+
 -- Approval status lookup (shared across all finance docs)
 -- Values to seed: Draft, Returned, Pending Approval, Approved, Posted
 CREATE TABLE IF NOT EXISTS approval_status_lu (
   code        text PRIMARY KEY,        -- 'Draft','Returned','Pending Approval','Approved','Posted'
   description text
+);
+
+-- Country lookup (for billing address)
+CREATE TABLE IF NOT EXISTS country_lu (
+  country_id    serial PRIMARY KEY,
+  country_name  text NOT NULL UNIQUE,
+  country_code  char(3) NOT NULL UNIQUE,
+  created_at    timestamptz DEFAULT now(),
+  created_by    text,
+  modified_at   timestamptz,
+  modified_by   text,
+  is_active     boolean DEFAULT true
+);
+
+-- Invoice status lookup (for AR invoices)
+CREATE TABLE IF NOT EXISTS invoice_status_lu (
+  code        text PRIMARY KEY,        -- e.g. UNPAID, PARTIALLY_PAID, FULLY_PAID
+  label       text NOT NULL UNIQUE,
+  description text,
+  is_active   boolean DEFAULT true,
+  created_at  timestamptz DEFAULT now(),
+  created_by  text,
+  modified_at timestamptz,
+  modified_by text
+);
+
+-- GL posting status lookup (shared across all finance docs)
+CREATE TABLE IF NOT EXISTS gl_posting_status_lu (
+  code        text PRIMARY KEY,        -- e.g. PENDING, POSTED, ERROR
+  label       text NOT NULL UNIQUE,
+  description text,
+  is_active   boolean DEFAULT true,
+  created_at  timestamptz DEFAULT now(),
+  created_by  text,
+  modified_at timestamptz,
+  modified_by text
 );
 
 -- ============================================================
@@ -513,12 +562,12 @@ CREATE TABLE IF NOT EXISTS ar_invoice (
   id                       uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
 
   invoice_no               text NOT NULL UNIQUE,
-  invoice_type             text NOT NULL,                 -- from Excel
+  invoice_type             text NOT NULL REFERENCES invoice_type_lu(code),
   invoice_date             date NOT NULL,
   customer_id              uuid, -- REFERENCES party_master(id) -- External: UUID only (nullable for Finance independence)
   job_id                   uuid, -- REFERENCES ops_job(id) -- External: UUID only
   billing_address          text,
-  billing_country          text,
+  billing_country           char(3) REFERENCES country_lu(country_code),
   currency_code            char(3) NOT NULL REFERENCES currency_lu(code),
   exchange_rate            numeric(12,6),
   payment_term_code        text, -- REFERENCES payment_term_lu(code) -- Internal table
@@ -542,9 +591,9 @@ CREATE TABLE IF NOT EXISTS ar_invoice (
 
   approval_status          text REFERENCES approval_status_lu(code),
   approval_remarks         text,
-  invoice_status           text,                          -- Unpaid/Partially/Fully Paid
-  gl_posting_status        text,                          -- Pending/Posted/Error
-  posting_reference_no     text,
+  invoice_status           text REFERENCES invoice_status_lu(code),  -- Unpaid/Partially/Fully Paid
+  gl_posting_status        text REFERENCES gl_posting_status_lu(code),  -- Pending/Posted/Error
+  posting_reference_no      text,
 
   created_by               text,
   created_at               timestamptz DEFAULT now(),
@@ -573,9 +622,7 @@ CREATE TABLE IF NOT EXISTS ar_invoice_line (
   invoice_id           uuid NOT NULL REFERENCES ar_invoice(id) ON DELETE CASCADE,
   line_no              int NOT NULL,
 
-  invoice_type_code    text REFERENCES invoice_type_lu(code),
-  item_description     text NOT NULL,
-  item_code            text,
+  item_id              uuid REFERENCES item_master(id),
   quantity             numeric(14,3),
   unit_price           numeric(14,2),
 
@@ -597,6 +644,9 @@ CREATE TABLE IF NOT EXISTS ar_invoice_line (
 
 CREATE INDEX IF NOT EXISTS idx_ar_invoice_line_invoice
   ON ar_invoice_line(invoice_id);
+
+CREATE INDEX IF NOT EXISTS idx_ar_invoice_line_item
+  ON ar_invoice_line(item_id);
 
 -- ============================================================
 --  AR RECEIPT (HEADER)
@@ -789,7 +839,7 @@ CREATE TABLE IF NOT EXISTS ap_vendor_invoice_line (
   line_no                   int NOT NULL,
 
   ops_provision_id          uuid, -- REFERENCES ops_provision(id) -- External: UUID only
-  item_description          text NOT NULL,
+  item_id                   uuid REFERENCES item_master(id),
   quantity                  numeric(14,3),
   unit_price                numeric(14,2),
   discount_amount           numeric(14,2),

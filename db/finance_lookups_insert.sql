@@ -48,6 +48,29 @@ INSERT INTO approval_status_lu (code, description) VALUES
   ('POSTED', 'Posted')
 ON CONFLICT (code) DO NOTHING;
 
+-- Country lookup (typically populated from backend or external source)
+-- Common countries for reference - add more as needed
+INSERT INTO country_lu (country_name, country_code) VALUES
+  ('United Arab Emirates', 'ARE'),
+  ('Saudi Arabia', 'SAU'),
+  ('India', 'IND'),
+  ('United States', 'USA'),
+  ('United Kingdom', 'GBR'),
+  ('China', 'CHN')
+ON CONFLICT (country_code) DO NOTHING;
+
+INSERT INTO invoice_status_lu (code, label, description) VALUES
+  ('UNPAID', 'Unpaid', 'Invoice has not been paid'),
+  ('PARTIALLY_PAID', 'Partially Paid', 'Invoice partially paid'),
+  ('FULLY_PAID', 'Fully Paid', 'Invoice fully paid')
+ON CONFLICT (code) DO NOTHING;
+
+INSERT INTO gl_posting_status_lu (code, label, description) VALUES
+  ('PENDING', 'Pending', 'GL posting pending'),
+  ('POSTED', 'Posted', 'Successfully posted to GL'),
+  ('ERROR', 'Error', 'Error during GL posting')
+ON CONFLICT (code) DO NOTHING;
+
 INSERT INTO invoice_type_lu (code, label, description) VALUES
   ('REGULAR', 'Regular', 'Standard customer invoice'),
   ('PROFORMA', 'Proforma', 'Proforma invoice (non-posting)'),
