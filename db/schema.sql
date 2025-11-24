@@ -228,7 +228,6 @@ CREATE TABLE IF NOT EXISTS ap_debit_note_reason_lu (
 -- Values to seed: Draft, Returned, Pending Approval, Approved, Posted
 CREATE TABLE IF NOT EXISTS approval_status_lu (
   code        text PRIMARY KEY,        -- 'Draft','Returned','Pending Approval','Approved','Posted'
-  display_order smallint NOT NULL,
   description text
 );
 
