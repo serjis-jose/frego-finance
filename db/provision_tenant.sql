@@ -680,6 +680,7 @@ BEGIN;
       invoice_id           uuid NOT NULL REFERENCES ar_invoice(id) ON DELETE CASCADE,
       line_no              int NOT NULL,
 
+      ops_billing_id       uuid, -- REFERENCES ops_billing(id) -- External: UUID only
       item_code            text,
       item_description     text,
       unit_of_measure      text,
