@@ -283,18 +283,6 @@ BEGIN;
       modified_by text
     );
 
-    -- Item master (for invoice lines)
-    CREATE TABLE IF NOT EXISTS item_master (
-      id              uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
-      item_code       text NOT NULL UNIQUE,
-      item_description text NOT NULL,
-      unit_of_measure text,
-      is_active       boolean DEFAULT true,
-      created_at      timestamptz DEFAULT now(),
-      created_by      text,
-      modified_at     timestamptz,
-      modified_by     text
-    );
 
     -- Approval status lookup (shared across all finance docs)
     -- Values to seed: Draft, Returned, Pending Approval, Approved, Posted
@@ -692,7 +680,9 @@ BEGIN;
       invoice_id           uuid NOT NULL REFERENCES ar_invoice(id) ON DELETE CASCADE,
       line_no              int NOT NULL,
 
-      item_id              uuid REFERENCES item_master(id),
+      item_code            text,
+      item_description     text,
+      unit_of_measure      text,
       quantity             numeric(14,3),
       unit_price           numeric(14,2),
 
@@ -714,9 +704,6 @@ BEGIN;
 
     CREATE INDEX IF NOT EXISTS idx_ar_invoice_line_invoice
       ON ar_invoice_line(invoice_id);
-
-    CREATE INDEX IF NOT EXISTS idx_ar_invoice_line_item
-      ON ar_invoice_line(item_id);
 
     -- ============================================================
     --  AR RECEIPT (HEADER)
@@ -912,7 +899,9 @@ BEGIN;
       line_no                   int NOT NULL,
 
       ops_provision_id          uuid, -- REFERENCES ops_provision(id) -- External: UUID only
-      item_id                   uuid REFERENCES item_master(id),
+      item_code                 text,
+      item_description          text,
+      unit_of_measure           text,
       quantity                  numeric(14,3),
       unit_price                numeric(14,2),
       discount_amount           numeric(14,2),
