@@ -74,7 +74,7 @@ func (m *TenantSessionManager) getTenantSchema(ctx context.Context, tenantID uui
 	// Query shared tenant registry
 	query := fmt.Sprintf(`
 		SELECT %s 
-		FROM tenant_registry 
+		FROM registry.tenant_registry 
 		WHERE tenant_id = $1 
 		  AND is_active = true
 		  AND $2 = ANY(modules_subscribed)
@@ -99,7 +99,7 @@ func (m *TenantSessionManager) getTenantSchema(ctx context.Context, tenantID uui
 func (m *TenantSessionManager) VerifyTenantAccess(ctx context.Context, tenantID uuid.UUID) error {
 	var hasAccess bool
 	err := m.tenantPool.QueryRow(ctx, `
-		SELECT tenant_has_module($1, $2)
+		SELECT registry.tenant_has_module($1, $2)
 	`, tenantID, m.serviceName).Scan(&hasAccess)
 
 	if err != nil {
