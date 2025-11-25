@@ -50,9 +50,6 @@ CREATE TABLE IF NOT EXISTS gl_account_lu (
   modified_by        text
 );
 
-CREATE INDEX IF NOT EXISTS idx_gl_account_group
-  ON gl_account_lu(account_group_id);
-
 -- Tax code master
 CREATE TABLE IF NOT EXISTS tax_code_lu (
   id             uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -108,9 +105,6 @@ CREATE TABLE IF NOT EXISTS bank_account_lu (
   modified_at      timestamptz,
   modified_by      text
 );
-
-CREATE INDEX IF NOT EXISTS idx_bank_account_gl
-  ON bank_account_lu(gl_account_id);
 
 -- Invoice type lookup (for AR invoice lines)
 CREATE TABLE IF NOT EXISTS invoice_type_lu (
@@ -289,6 +283,8 @@ CREATE TABLE IF NOT EXISTS journal_entry_header (
   description            text,
   source_module          text,            -- Module that created this entry (AR_INVOICE / AP_PAYMENT / JV etc.)
   source_id              uuid,            -- Document's primary key (invoice_id, payment_id, etc.)
+  source_document_type   text,            -- More granular document classification (e.g. INVOICE/RECEIPT/JV)
+  source_document_id     uuid,            -- Explicit reference to the originating document
   currency_code          char(3) REFERENCES currency_lu(code),
   exchange_rate          numeric(12,6),
   total_debit            numeric(14,2),
@@ -314,12 +310,6 @@ CREATE TABLE IF NOT EXISTS journal_entry_header (
     (total_debit > 0 AND total_credit > 0)
   )
 );
-
-CREATE INDEX IF NOT EXISTS idx_journal_header_date
-  ON journal_entry_header(je_date);
-
-CREATE INDEX IF NOT EXISTS idx_journal_header_source
-  ON journal_entry_header(source_module, source_document_type, source_document_id);
 
 CREATE TABLE IF NOT EXISTS journal_entry_lines (
   je_line_id         uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -355,18 +345,6 @@ CREATE TABLE IF NOT EXISTS journal_entry_lines (
     (debit_amount = 0 AND credit_amount > 0)
   )
 );
-
-CREATE INDEX IF NOT EXISTS idx_journal_lines_header
-  ON journal_entry_lines(je_id);
-
-CREATE INDEX IF NOT EXISTS idx_journal_lines_gl_account
-  ON journal_entry_lines(gl_account_id);
-
-CREATE INDEX IF NOT EXISTS idx_journal_lines_party
-  ON journal_entry_lines(party_id);
-
-CREATE INDEX IF NOT EXISTS idx_journal_lines_job
-  ON journal_entry_lines(job_id);
 
 -- ============================================================
 --  JOURNAL ENTRY VALIDATION TRIGGERS
@@ -505,6 +483,8 @@ CREATE TABLE IF NOT EXISTS general_ledger (
   posting_date           date,            -- Ledger posting date (same as JE date)
   source_module          text,            -- AR_INVOICE / AP_INVOICE / etc.
   source_id              uuid,            -- The document ID from source module
+  source_document_type   text,            -- More granular document classification (e.g. INVOICE/RECEIPT/JV)
+  source_document_id     uuid,            -- Explicit reference to the originating document
   currency_code          char(3),         -- Original transaction currency
   exchange_rate          numeric(12,6),   -- FX rate used
   journal_status         text,
@@ -529,18 +509,6 @@ CREATE TABLE IF NOT EXISTS general_ledger (
   posted_by              text,            -- User/system who performed posting
   is_active              boolean DEFAULT true
 );
-
-CREATE UNIQUE INDEX IF NOT EXISTS idx_general_ledger_line_id
-  ON general_ledger(je_line_id);
-
-CREATE INDEX IF NOT EXISTS idx_general_ledger_account
-  ON general_ledger(gl_account_id, posting_date);
-
-CREATE INDEX IF NOT EXISTS idx_general_ledger_party
-  ON general_ledger(party_id, posting_date);
-
-CREATE INDEX IF NOT EXISTS idx_general_ledger_group
-  ON general_ledger(account_group_code, posting_date);
 
 -- ============================================================
 --  AR INVOICE (HEADER)
@@ -597,12 +565,6 @@ CREATE TABLE IF NOT EXISTS ar_invoice (
   is_active                boolean DEFAULT true
 );
 
-CREATE INDEX IF NOT EXISTS idx_ar_invoice_customer_status
-  ON ar_invoice(customer_id, invoice_status);
-
-CREATE INDEX IF NOT EXISTS idx_ar_invoice_job
-  ON ar_invoice(job_id);
-
 -- ============================================================
 --  AR INVOICE LINES
 --  NOTE: discount_amount → amount_without_tax (for readability)
@@ -635,9 +597,6 @@ CREATE TABLE IF NOT EXISTS ar_invoice_line (
 
   UNIQUE (invoice_id, line_no)
 );
-
-CREATE INDEX IF NOT EXISTS idx_ar_invoice_line_invoice
-  ON ar_invoice_line(invoice_id);
 
 -- ============================================================
 --  AR RECEIPT (HEADER)
@@ -694,9 +653,6 @@ CREATE TABLE IF NOT EXISTS ar_receipt (
   is_active                   boolean DEFAULT true
 );
 
-CREATE INDEX IF NOT EXISTS idx_ar_receipt_customer_date
-  ON ar_receipt(customer_id, receipt_date);
-
 -- ============================================================
 --  AR RECEIPT - INVOICE ALLOCATION
 -- ============================================================
@@ -721,9 +677,6 @@ CREATE TABLE IF NOT EXISTS ar_receipt_invoice_allocation (
 
   UNIQUE (receipt_id, line_no)
 );
-
-CREATE INDEX IF NOT EXISTS idx_ar_receipt_alloc_invoice
-  ON ar_receipt_invoice_allocation(invoice_id);
 
 -- ============================================================
 --  AR CREDIT NOTE
@@ -765,9 +718,6 @@ CREATE TABLE IF NOT EXISTS ar_credit_note (
   posted_at                     timestamptz,
   is_active                     boolean DEFAULT true
 );
-
-CREATE INDEX IF NOT EXISTS idx_ar_credit_note_customer
-  ON ar_credit_note(customer_id, credit_note_date);
 
 -- ============================================================
 --  AP VENDOR INVOICE (HEADER)
@@ -820,9 +770,6 @@ CREATE TABLE IF NOT EXISTS ap_vendor_invoice (
   is_active                   boolean DEFAULT true
 );
 
-CREATE INDEX IF NOT EXISTS idx_ap_vendor_invoice_vendor_status
-  ON ap_vendor_invoice(vendor_id, invoice_status);
-
 -- ============================================================
 --  AP VENDOR INVOICE LINES
 -- ============================================================
@@ -854,9 +801,6 @@ CREATE TABLE IF NOT EXISTS ap_vendor_invoice_line (
 
   UNIQUE (vendor_invoice_id, line_no)
 );
-
-CREATE INDEX IF NOT EXISTS idx_ap_vendor_invoice_line_invoice
-  ON ap_vendor_invoice_line(vendor_invoice_id);
 
 -- ============================================================
 --  AP PAYMENT AGAINST INVOICE
@@ -905,9 +849,6 @@ CREATE TABLE IF NOT EXISTS ap_payment_against_invoice (
   is_active                   boolean DEFAULT true
 );
 
-CREATE INDEX IF NOT EXISTS idx_ap_payment_against_vendor
-  ON ap_payment_against_invoice(vendor_id, payment_date);
-
 -- ============================================================
 --  AP VENDOR INVOICE ALLOCATION (PAYMENT AGAINST INVOICE)
 -- ============================================================
@@ -933,9 +874,6 @@ CREATE TABLE IF NOT EXISTS ap_vendor_invoice_allocation (
 
   UNIQUE (payment_against_invoice_id, line_no)
 );
-
-CREATE INDEX IF NOT EXISTS idx_ap_vendor_invoice_allocation_invoice
-  ON ap_vendor_invoice_allocation(vendor_invoice_id);
 
 -- ============================================================
 --  AP PAYMENT WITHOUT INVOICE
@@ -991,9 +929,6 @@ CREATE TABLE IF NOT EXISTS ap_payment_without_invoice (
   is_active                   boolean DEFAULT true
 );
 
-CREATE INDEX IF NOT EXISTS idx_ap_payment_without_party
-  ON ap_payment_without_invoice(party_id, payment_date);
-
 -- ============================================================
 --  AP VENDOR PROVISION DETAILS (PAYMENT WITHOUT INVOICE)
 -- ============================================================
@@ -1023,9 +958,6 @@ CREATE TABLE IF NOT EXISTS ap_vendor_provision_details (
 
   UNIQUE (payment_without_invoice_id, line_no)
 );
-
-CREATE INDEX IF NOT EXISTS idx_ap_vendor_provision_payment
-  ON ap_vendor_provision_details(payment_without_invoice_id);
 
 -- ============================================================
 --  AP DEBIT NOTE
@@ -1066,9 +998,6 @@ CREATE TABLE IF NOT EXISTS ap_debit_note (
   is_active                   boolean DEFAULT true
 );
 
-CREATE INDEX IF NOT EXISTS idx_ap_debit_note_vendor
-  ON ap_debit_note(vendor_id, invoice_status);
-
 -- ============================================================
 --  APPROVAL HISTORY + TRIGGER
 -- ============================================================
@@ -1085,9 +1014,6 @@ CREATE TABLE IF NOT EXISTS approval_history (
   remarks       text,
   is_active     boolean DEFAULT true
 );
-
-CREATE INDEX IF NOT EXISTS idx_approval_history_record
-  ON approval_history(module_name, record_id, action_at);
 
 CREATE OR REPLACE FUNCTION trg_approval_status_audit()
 RETURNS trigger AS $$
