@@ -46,7 +46,7 @@ func loadFinanceProvisionScript() (string, error) {
 	return financeProvisionSQL, nil
 }
 
-// EnsureFinanceTenantProvisioning installs the finance tenant provisioning procedure if it is absent.
+// EnsureFinanceTenantProvisioning installs or refreshes the finance tenant provisioning procedure on startup.
 func EnsureFinanceTenantProvisioning(ctx context.Context, pool *pgxpool.Pool) error {
 	financeProvisionMu.Lock()
 	defer financeProvisionMu.Unlock()
@@ -66,20 +66,9 @@ func EnsureFinanceTenantProvisioning(ctx context.Context, pool *pgxpool.Pool) er
 	}
 	defer conn.Release()
 
-	var exists bool
-	if err := conn.QueryRow(ctx, `
-		SELECT EXISTS (
-			SELECT 1 FROM pg_proc
-			WHERE proname = 'ensure_finance_tenant_schema'
-		)
-	`).Scan(&exists); err != nil {
-		return fmt.Errorf("check finance procedure: %w", err)
-	}
-
-	if !exists {
-		if _, err := conn.Exec(ctx, script); err != nil {
-			return fmt.Errorf("execute provisioning script: %w", err)
-		}
+	// Execute the script unconditionally so the latest definition is always in place.
+	if _, err := conn.Exec(ctx, script); err != nil {
+		return fmt.Errorf("execute provisioning script: %w", err)
 	}
 
 	financeProvisionApplied = true
