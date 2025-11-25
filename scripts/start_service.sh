@@ -9,7 +9,7 @@ export HTTP_ADDRESS=${HTTP_ADDRESS:-":8081"}
 export ENVIRONMENT=${ENVIRONMENT:-"development"}
 
 # Database Configuration (Localhost)
-export TENANT_DB_URL=${TENANT_DB_URL:-"postgres://postgres:postgres@localhost:5432/frego_tenant_db?sslmode=disable"}
+export TENANT_DB_URL=${TENANT_DB_URL:-"postgres://erp_user:password@localhost:5432/frego_core_db?sslmode=disable"}
 export DB_URL=${DB_URL:-"postgres://postgres:postgres@localhost:5433/frego_finance_db?sslmode=disable"}
 
 # Mock Security for local dev

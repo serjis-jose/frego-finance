@@ -35,21 +35,12 @@ CREATE TABLE IF NOT EXISTS currency_lu (
   is_active    boolean DEFAULT true
 );
 
--- Ledger account groups (AR, AP, BANK, etc.)
-CREATE TABLE IF NOT EXISTS gl_account_group_lu (
-  id          smallint PRIMARY KEY,
-  code        text NOT NULL UNIQUE,   -- e.g. 'AR_LEDGER','AP_LEDGER','BANK_LEDGER'
-  name        text NOT NULL,
-  description text
-);
-
 -- GL account master
 CREATE TABLE IF NOT EXISTS gl_account_lu (
   id                 uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
   code               text NOT NULL UNIQUE,
   name               text NOT NULL,
   account_type       text,                       -- Asset/Liability/Income/Expense/Equity
-  account_group_id   smallint REFERENCES gl_account_group_lu(id),
   control_account_for text,                     -- 'Customer','Vendor','Bank', etc. (optional)
   currency_code      char(3) REFERENCES currency_lu(code),
   is_active          boolean DEFAULT true,
@@ -261,7 +252,7 @@ CREATE TABLE IF NOT EXISTS country_lu (
   is_active     boolean DEFAULT true
 );
 
--- Invoice status lookup (for AR invoices)
+-- Invoice status lookup (for AR and AP invoices)
 CREATE TABLE IF NOT EXISTS invoice_status_lu (
   code        text PRIMARY KEY,        -- e.g. UNPAID, PARTIALLY_PAID, FULLY_PAID
   label       text NOT NULL UNIQUE,
@@ -297,8 +288,6 @@ CREATE TABLE IF NOT EXISTS journal_entry_header (
   document_date          date,            -- Actual document date (invoice date / payment date)
   description            text,
   source_module          text,            -- Module that created this entry (AR_INVOICE / AP_PAYMENT / JV etc.)
-  source_document_type   text,            -- 'AR_INVOICE','AP_PAYMENT',...
-  source_document_id     uuid,            -- FK not enforced (can point to any header)
   source_id              uuid,            -- Document's primary key (invoice_id, payment_id, etc.)
   currency_code          char(3) REFERENCES currency_lu(code),
   exchange_rate          numeric(12,6),
@@ -339,8 +328,6 @@ CREATE TABLE IF NOT EXISTS journal_entry_lines (
   gl_account_id      uuid NOT NULL REFERENCES gl_account_lu(id),
   gl_account_code    text,            -- Which GL account to debit/credit
   cost_center_code   text,            -- Optional cost center / department
-  party_id           uuid,            -- REFERENCES party_master(id) -- External: UUID only (customer/vendor)
-  party_name         text,            -- Snapshot: party_master.name (for standalone display)
   vendor_id          uuid,            -- Used for AP transactions
   vendor_name        text,            -- Snapshot: party_master.name (for standalone display)
   customer_id        uuid,            -- Used for AR transactions
@@ -515,13 +502,8 @@ CREATE TABLE IF NOT EXISTS general_ledger (
   gl_entry_id            uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
   je_line_id             uuid,            -- Reference to JE Line
   je_id                  uuid,            -- Reference to JE Header
-  journal_no             text,
-  journal_date           date,
   posting_date           date,            -- Ledger posting date (same as JE date)
-  journal_description    text,
   source_module          text,            -- AR_INVOICE / AP_INVOICE / etc.
-  source_document_type   text,
-  source_document_id     uuid,
   source_id              uuid,            -- The document ID from source module
   currency_code          char(3),         -- Original transaction currency
   exchange_rate          numeric(12,6),   -- FX rate used
@@ -529,13 +511,7 @@ CREATE TABLE IF NOT EXISTS general_ledger (
   line_no                int,
   gl_account_id          uuid REFERENCES gl_account_lu(id),
   gl_account_code        text,            -- GL account code
-  gl_account_name        text,
-  account_group_id       smallint,
-  account_group_code     text,
-  account_group_name     text,
   cost_center_code       text,            -- Optional cost center
-  party_id               uuid,
-  party_name             text,            -- Snapshot: party_master.name (for standalone display)
   vendor_id              uuid,            -- Vendor reference (for AP reporting)
   vendor_name            text,            -- Snapshot: party_master.name (for standalone display)
   customer_id            uuid,            -- Customer reference (for AR reporting)
@@ -547,7 +523,6 @@ CREATE TABLE IF NOT EXISTS general_ledger (
   debit_amount           numeric(14,2) DEFAULT 0, -- Debit amount in base currency
   credit_amount          numeric(14,2) DEFAULT 0, -- Credit amount in base currency
   amount_base            numeric(14,2),   -- Amount converted into base currency
-  line_narration         text,
   created_at             timestamptz DEFAULT now(), -- Timestamp when GL row was actually inserted
   created_by             text,
   posted_at              timestamptz,     -- Same as created_at (but kept separately for audit)
@@ -705,8 +680,7 @@ CREATE TABLE IF NOT EXISTS ar_receipt (
 
   approval_status             text REFERENCES approval_status_lu(code),
   approval_remarks            text,
-  invoice_status              text,
-  gl_posting_status           text,
+  gl_posting_status        text REFERENCES gl_posting_status_lu(code),  -- Pending/Posted/Error
   posting_reference_no        text,
 
   created_by                  text,
@@ -778,7 +752,7 @@ CREATE TABLE IF NOT EXISTS ar_credit_note (
 
   approval_status               text REFERENCES approval_status_lu(code),
   approval_remarks              text,
-  gl_posting_status             text,
+  gl_posting_status             text REFERENCES gl_posting_status_lu(code),
   posting_reference_no          text,
 
   created_by                    text,
@@ -831,9 +805,9 @@ CREATE TABLE IF NOT EXISTS ap_vendor_invoice (
   approval_status             text REFERENCES approval_status_lu(code),
   approval_remarks            text,
   reversal_reference          text,
-  invoice_status              text,
+  invoice_status              text REFERENCES invoice_status_lu(code),
   gl_posting_reference        text,
-  gl_posting_status           text,
+  gl_posting_status           text REFERENCES gl_posting_status_lu(code),
 
   created_by                  text,
   created_at                  timestamptz DEFAULT now(),
@@ -918,7 +892,7 @@ CREATE TABLE IF NOT EXISTS ap_payment_against_invoice (
   approval_status             text REFERENCES approval_status_lu(code),
   approval_remarks            text,
   gl_posting_reference        text,
-  gl_posting_status           text,
+  gl_posting_status           text REFERENCES gl_posting_status_lu(code),
 
   created_by                  text,
   created_at                  timestamptz DEFAULT now(),
@@ -933,6 +907,35 @@ CREATE TABLE IF NOT EXISTS ap_payment_against_invoice (
 
 CREATE INDEX IF NOT EXISTS idx_ap_payment_against_vendor
   ON ap_payment_against_invoice(vendor_id, payment_date);
+
+-- ============================================================
+--  AP VENDOR INVOICE ALLOCATION (PAYMENT AGAINST INVOICE)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS ap_vendor_invoice_allocation (
+  id                           uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  payment_against_invoice_id   uuid NOT NULL REFERENCES ap_payment_against_invoice(id) ON DELETE CASCADE,
+  line_no                      int NOT NULL,
+
+  vendor_invoice_id            uuid REFERENCES ap_vendor_invoice(id),
+  invoice_reference            text,                       -- User-entered reference (if no system invoice)
+  invoice_no_snapshot          text,
+  invoice_date_snapshot        date,
+  invoice_amount               numeric(14,2),
+  outstanding_amount           numeric(14,2),
+  allocated_amount             numeric(14,2),
+
+  created_at                   timestamptz DEFAULT now(),
+  created_by                   text,
+  modified_at                  timestamptz,
+  modified_by                  text,
+  is_active                    boolean DEFAULT true,
+
+  UNIQUE (payment_against_invoice_id, line_no)
+);
+
+CREATE INDEX IF NOT EXISTS idx_ap_vendor_invoice_allocation_invoice
+  ON ap_vendor_invoice_allocation(vendor_invoice_id);
 
 -- ============================================================
 --  AP PAYMENT WITHOUT INVOICE
@@ -964,10 +967,10 @@ CREATE TABLE IF NOT EXISTS ap_payment_without_invoice (
   amount_in_base_currency     numeric(14,2),
   payment_remarks             text,
 
-  official_payee_name         text,
+  payee_name         text,
   payee_type                  text REFERENCES ap_receiver_type_lu(code),
-  official_ref_number         text,
-  official_ref_date           date,
+  ref_number         text,
+  ref_date           date,
   receipt_supporting_documents jsonb,                       -- JSON attachments for receipt proof
   is_marked_as_vendor_advance boolean,
   additional_narration        text,
@@ -975,7 +978,7 @@ CREATE TABLE IF NOT EXISTS ap_payment_without_invoice (
   approval_status             text REFERENCES approval_status_lu(code),
   approval_remarks            text,
   gl_posting_reference        text,
-  gl_posting_status           text,
+  gl_posting_status           text REFERENCES gl_posting_status_lu(code),
 
   created_by                  text,
   created_at                  timestamptz DEFAULT now(),
@@ -990,6 +993,39 @@ CREATE TABLE IF NOT EXISTS ap_payment_without_invoice (
 
 CREATE INDEX IF NOT EXISTS idx_ap_payment_without_party
   ON ap_payment_without_invoice(party_id, payment_date);
+
+-- ============================================================
+--  AP VENDOR PROVISION DETAILS (PAYMENT WITHOUT INVOICE)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS ap_vendor_provision_details (
+  id                           uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  payment_without_invoice_id   uuid NOT NULL REFERENCES ap_payment_without_invoice(id) ON DELETE CASCADE,
+  line_no                      int NOT NULL,
+
+  ops_provision_id             uuid, -- REFERENCES ops_provision(id) -- External: UUID only
+  item_description             text,
+  item_code                    text,
+  quantity                     numeric(14,3),
+  unit_price                   numeric(14,2),
+  amount_without_tax           numeric(14,2),
+  tax_percent                  numeric(6,3),
+  tax_amount                   numeric(14,2),
+  total_with_tax               numeric(14,2),
+  outstanding_amount           numeric(14,2),
+  allocated_amount             numeric(14,2),
+
+  created_at                   timestamptz DEFAULT now(),
+  created_by                   text,
+  modified_at                  timestamptz,
+  modified_by                  text,
+  is_active                    boolean DEFAULT true,
+
+  UNIQUE (payment_without_invoice_id, line_no)
+);
+
+CREATE INDEX IF NOT EXISTS idx_ap_vendor_provision_payment
+  ON ap_vendor_provision_details(payment_without_invoice_id);
 
 -- ============================================================
 --  AP DEBIT NOTE
@@ -1013,6 +1049,7 @@ CREATE TABLE IF NOT EXISTS ap_debit_note (
   tax_amount                  numeric(14,2),
   total_amount                numeric(14,2),
   expense_gl_account_id       uuid REFERENCES gl_account_lu(id),
+  department_cost_center_code text REFERENCES department_cost_center_lu(code),
 
   supporting_documents        jsonb,                      -- JSON attachment metadata
   remarks                     text,

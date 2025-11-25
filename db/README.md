@@ -62,7 +62,7 @@ Complete stored procedure that creates all finance tables in a tenant-specific s
 - **Lookups**: currency_lu, payment_term_lu, gl_account_lu, tax_code_lu, etc.
 - **Ledger**: journal_entry_header, journal_entry_lines, general_ledger
 - **AR**: ar_invoice, ar_receipt, ar_credit_note (with lines)
-- **AP**: ap_vendor_invoice, ap_payment_*, ap_debit_note (with lines)
+- **AP**: ap_vendor_invoice (with lines + allocations), ap_payment_against_invoice, ap_vendor_invoice_allocation, ap_payment_without_invoice, ap_vendor_provision_details, ap_debit_note
 - **Audit**: approval_history with triggers
 
 **Key features:**
@@ -150,11 +150,13 @@ finance_<tenant> schema:
 │   ├── ar_receipt
 │   ├── ar_receipt_invoice_allocation
 │   └── ar_credit_note
-├── AP Module (7 tables)
+├── AP Module (9 tables)
 │   ├── ap_vendor_invoice
 │   ├── ap_vendor_invoice_line
 │   ├── ap_payment_against_invoice
+│   ├── ap_vendor_invoice_allocation
 │   ├── ap_payment_without_invoice
+│   ├── ap_vendor_provision_details
 │   └── ap_debit_note
 └── Audit (1 table)
     └── approval_history
