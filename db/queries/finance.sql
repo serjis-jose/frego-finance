@@ -86,8 +86,7 @@ INSERT INTO journal_entry_header (
   je_date,
   description,
   source_module,
-  source_document_type,
-  source_document_id,
+  source_id,
   currency_code,
   exchange_rate,
   total_debit,
@@ -95,7 +94,7 @@ INSERT INTO journal_entry_header (
   status,
   created_by
 ) VALUES (
-  $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12
+  $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
 )
 RETURNING *;
 
@@ -104,7 +103,8 @@ INSERT INTO journal_entry_lines (
   je_id,
   line_no,
   gl_account_id,
-  party_id,
+  vendor_id,
+  customer_id,
   job_id,
   branch_id,
   debit_amount,
@@ -112,7 +112,7 @@ INSERT INTO journal_entry_lines (
   narration,
   created_by
 ) VALUES (
-  $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
+  $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
 )
 RETURNING *;
 
@@ -120,28 +120,22 @@ RETURNING *;
 INSERT INTO general_ledger (
   je_line_id,
   je_id,
-  journal_no,
   posting_date,
-  journal_description,
   source_module,
-  source_document_type,
-  source_document_id,
+  source_id,
   currency_code,
   exchange_rate,
   journal_status,
   line_no,
   gl_account_id,
   gl_account_code,
-  gl_account_name,
-  account_group_id,
-  account_group_code,
-  account_group_name,
-  party_id,
+  cost_center_code,
+  vendor_id,
+  customer_id,
   job_id,
   branch_id,
   debit_amount,
   credit_amount,
-  line_narration,
   created_by,
   posted_at,
   posted_by
@@ -149,33 +143,26 @@ INSERT INTO general_ledger (
 SELECT 
   jl.je_line_id,
   jh.je_id,
-  jh.je_number,
   jh.je_date,
-  jh.description,
   jh.source_module,
-  jh.source_document_type,
-  jh.source_document_id,
+  jh.source_id,
   jh.currency_code,
   jh.exchange_rate,
   jh.status,
   jl.line_no,
   jl.gl_account_id,
   gl.code,
-  gl.name,
-  gl.account_group_id,
-  grp.code,
-  grp.name,
-  jl.party_id,
+  jl.cost_center_code,
+  jl.vendor_id,
+  jl.customer_id,
   jl.job_id,
   jl.branch_id,
   jl.debit_amount,
   jl.credit_amount,
-  jl.narration,
   jh.created_by,
   now(),
   $2
 FROM journal_entry_lines jl
 JOIN journal_entry_header jh ON jl.je_id = jh.je_id
 JOIN gl_account_lu gl ON jl.gl_account_id = gl.id
-LEFT JOIN gl_account_group_lu grp ON gl.account_group_id = grp.id
 WHERE jh.je_id = $1;
