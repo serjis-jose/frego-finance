@@ -24,16 +24,7 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 -- ============================================================
 
 -- Currency lookup (global)
-CREATE TABLE IF NOT EXISTS currency_lu (
-  id           uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
-  code         char(3) NOT NULL UNIQUE,
-  name         text,
-  created_at   timestamptz,
-  created_by   text,
-  modified_at  timestamptz,
-  modified_by  text,
-  is_active    boolean DEFAULT true
-);
+
 
 -- GL account master
 CREATE TABLE IF NOT EXISTS gl_account_lu (
@@ -42,7 +33,7 @@ CREATE TABLE IF NOT EXISTS gl_account_lu (
   name               text NOT NULL,
   account_type       text,                       -- Asset/Liability/Income/Expense/Equity
   control_account_for text,                     -- 'Customer','Vendor','Bank', etc. (optional)
-  currency_code      char(3) REFERENCES currency_lu(code),
+  currency_code      char(3),
   is_active          boolean DEFAULT true,
   created_at         timestamptz DEFAULT now(),
   created_by         text,
@@ -96,7 +87,7 @@ CREATE TABLE IF NOT EXISTS bank_account_lu (
   account_number   text NOT NULL,
   iban             text,
   swift_code       text,
-  currency_code    char(3) REFERENCES currency_lu(code),
+  currency_code    char(3),
   gl_account_id    uuid REFERENCES gl_account_lu(id),
   is_default       boolean DEFAULT false,
   is_active        boolean DEFAULT true,
@@ -235,16 +226,7 @@ CREATE TABLE IF NOT EXISTS approval_status_lu (
 );
 
 -- Country lookup (for billing address)
-CREATE TABLE IF NOT EXISTS country_lu (
-  country_id    serial PRIMARY KEY,
-  country_name  text NOT NULL UNIQUE,
-  country_code  char(3) NOT NULL UNIQUE,
-  created_at    timestamptz DEFAULT now(),
-  created_by    text,
-  modified_at   timestamptz,
-  modified_by   text,
-  is_active     boolean DEFAULT true
-);
+
 
 -- Invoice status lookup (for AR and AP invoices)
 CREATE TABLE IF NOT EXISTS invoice_status_lu (
@@ -285,7 +267,7 @@ CREATE TABLE IF NOT EXISTS journal_entry_header (
   source_id              uuid,            -- Document's primary key (invoice_id, payment_id, etc.)
   source_document_type   text,            -- More granular document classification (e.g. INVOICE/RECEIPT/JV)
   source_document_id     uuid,            -- Explicit reference to the originating document
-  currency_code          char(3) REFERENCES currency_lu(code),
+  currency_code          char(3),
   exchange_rate          numeric(12,6),
   total_debit            numeric(14,2),
   total_credit           numeric(14,2),
@@ -326,6 +308,7 @@ CREATE TABLE IF NOT EXISTS journal_entry_lines (
   job_no             text,            -- Optional job number for job-based postings
   job_code           text,            -- Snapshot: ops_job.job_code (for standalone display)
   branch_id          uuid,            -- REFERENCES branch_lu(branch_id) -- External: UUID only
+  branch_name        text,            -- Snapshot: branch_lu.branch_name (for standalone display)
   debit_amount       numeric(14,2) DEFAULT 0,
   credit_amount      numeric(14,2) DEFAULT 0,
   narration          text,
@@ -500,6 +483,7 @@ CREATE TABLE IF NOT EXISTS general_ledger (
   job_no                 text,            -- Optional job no (if job related)
   job_code               text,            -- Snapshot: ops_job.job_code (for standalone display)
   branch_id              uuid,
+  branch_name            text,
   debit_amount           numeric(14,2) DEFAULT 0, -- Debit amount in base currency
   credit_amount          numeric(14,2) DEFAULT 0, -- Credit amount in base currency
   amount_base            numeric(14,2),   -- Amount converted into base currency
@@ -525,8 +509,8 @@ CREATE TABLE IF NOT EXISTS ar_invoice (
   job_id                   uuid, -- REFERENCES ops_job(id) -- External: UUID only
   job_code                 text, -- Snapshot: ops_job.job_code (for standalone display)
   billing_address          text,
-  billing_country           char(3) REFERENCES country_lu(country_code),
-  currency_code            char(3) NOT NULL REFERENCES currency_lu(code),
+  billing_country           char(3),
+  currency_code            char(3) NOT NULL,
   exchange_rate            numeric(12,6),
   payment_term_code        text, -- REFERENCES payment_term_lu(code) -- Internal table
   customer_po_number       text,
@@ -610,7 +594,7 @@ CREATE TABLE IF NOT EXISTS ar_receipt (
   receipt_date                date NOT NULL,
   customer_id                 uuid, -- REFERENCES party_master(id) -- External: UUID only (nullable for Finance independence)
   customer_name               text, -- Snapshot: party_master.name (for standalone display)
-  currency_code               char(3) NOT NULL REFERENCES currency_lu(code),
+  currency_code               char(3) NOT NULL,
   exchange_rate               numeric(12,6),
   payment_mode_id             smallint REFERENCES payment_method_lu(id),
   bank_account_id             uuid REFERENCES bank_account_lu(id),
@@ -690,7 +674,7 @@ CREATE TABLE IF NOT EXISTS ar_credit_note (
   customer_id                   uuid, -- REFERENCES party_master(id) -- External: UUID only (nullable for Finance independence)
   customer_name                 text, -- Snapshot: party_master.name (for standalone display)
   invoice_id                    uuid REFERENCES ar_invoice(id),
-  currency_code                 char(3) NOT NULL REFERENCES currency_lu(code),
+  currency_code                 char(3) NOT NULL,
   exchange_rate                 numeric(12,6),
 
   reason_type                   text REFERENCES credit_note_reason_lu(code),
@@ -739,7 +723,7 @@ CREATE TABLE IF NOT EXISTS ap_vendor_invoice (
   department_cost_center_code text REFERENCES department_cost_center_lu(code),
   cost_head_gl_account_id     uuid REFERENCES gl_account_lu(id),
   asset_category_code         text REFERENCES asset_category_lu(code),
-  currency_code               char(3) NOT NULL REFERENCES currency_lu(code),
+  currency_code               char(3) NOT NULL,
   exchange_rate               numeric(12,6),
 
   subtotal_amount             numeric(14,2),
@@ -816,7 +800,7 @@ CREATE TABLE IF NOT EXISTS ap_payment_against_invoice (
   payment_type                text NOT NULL REFERENCES ap_payment_application_type_lu(code),
   vendor_invoice_id           uuid REFERENCES ap_vendor_invoice(id),
   invoice_type                text REFERENCES ap_invoice_category_lu(code),
-  currency_code               char(3) NOT NULL REFERENCES currency_lu(code),
+  currency_code               char(3) NOT NULL,
   exchange_rate               numeric(12,6),
   payment_purpose             text,
 
@@ -890,7 +874,7 @@ CREATE TABLE IF NOT EXISTS ap_payment_without_invoice (
   party_id                    uuid, -- REFERENCES party_master(id) -- External: UUID only
   party_name                  text, -- Snapshot: party_master.name (for standalone display)
   vendor_code_snapshot        text,
-  currency_code               char(3) NOT NULL REFERENCES currency_lu(code),
+  currency_code               char(3) NOT NULL,
   exchange_rate               numeric(12,6),
   payment_purpose             text,
   cost_head_gl_account_id     uuid REFERENCES gl_account_lu(id),
@@ -971,7 +955,7 @@ CREATE TABLE IF NOT EXISTS ap_debit_note (
   vendor_id                   uuid, -- REFERENCES party_master(id) -- External: UUID only (nullable for Finance independence)
   vendor_name                 text, -- Snapshot: party_master.name (for standalone display)
   vendor_invoice_id           uuid REFERENCES ap_vendor_invoice(id),
-  currency_code               char(3) NOT NULL REFERENCES currency_lu(code),
+  currency_code               char(3) NOT NULL,
   exchange_rate               numeric(12,6),
 
   reason_type                 text REFERENCES ap_debit_note_reason_lu(code),
